@@ -1,0 +1,226 @@
+/* Imaginy — все стили расширения. Только .imaginy-* классы. */
+
+/* Наша собственная обёртка для <video> — SLAY никогда не оборачивает видео
+   (docs/sillytavern-api.md §2.1 п.2), поэтому копируем правила .iig-img-wrap. */
+.imaginy-img-wrap {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    line-height: 0;
+    vertical-align: top;
+}
+
+/* Кнопка-карандаш. Смещена относительно .iig-regen-btn SLAY (top:8px; left:8px;
+   34x34), чтобы не перекрываться: left:50px = 8 (отступ SLAY) + 34 (её ширина) + 8. */
+.imaginy-edit-btn {
+    position: absolute;
+    top: 8px;
+    left: 50px;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    cursor: pointer;
+    opacity: 0;
+    z-index: 3;
+    transition: opacity 0.15s ease;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+}
+
+.imaginy-edit-btn:hover {
+    background: rgba(0, 0, 0, 0.65);
+}
+
+.imaginy-edit-btn:active {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.iig-img-wrap:hover .imaginy-edit-btn,
+.iig-img-wrap:focus-within .imaginy-edit-btn,
+.imaginy-img-wrap:hover .imaginy-edit-btn,
+.imaginy-img-wrap:focus-within .imaginy-edit-btn,
+.imaginy-busy .imaginy-edit-btn,
+.imaginy-edit-btn.imaginy-busy {
+    opacity: 1;
+}
+
+/* Иконка-спиннер на карандаше, пока идёт persist (index.js onEdit). Своё имя
+   анимации — не iig-spin SLAY (upstream style.css), чтобы не зависеть от апстрима. */
+@keyframes imaginy-spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.imaginy-spin {
+    animation: imaginy-spin 0.8s linear infinite;
+}
+
+/* Тач-устройства не имеют hover — кнопка должна быть видна постоянно (как у SLAY). */
+@media (hover: none) {
+    .imaginy-edit-btn {
+        opacity: 0.55;
+    }
+
+    .imaginy-edit-btn:active {
+        opacity: 1;
+    }
+}
+
+/* Плашка ошибки генерации — это блочный div без .iig-img-wrap, кнопку ставим в
+   правый верхний угол, чтобы не путать с местом, где была бы картинка, и держим
+   всегда видимой (плашку никто не "наводит", чтобы разглядеть). */
+.imaginy-edit-btn--error {
+    top: 8px;
+    left: auto;
+    right: 8px;
+    opacity: 1;
+}
+
+/* .iig-error-placeholder — класс SLAY, мы его не трогаем напрямую. Это правило
+   срабатывает только когда внутри реально есть наша кнопка, поэтому на
+   SLAY-only инсталляциях (без Imaginy) оно ни на что не влияет. Браузеры без
+   :has() (iOS Safari < 15.4) получают тот же эффект через JS-фолбэк в
+   src/decorate.js (decorateErrorPlaceholder). */
+.iig-error-placeholder:has(.imaginy-edit-btn) {
+    position: relative;
+}
+
+/* ── Редактор промпта (src/editor.js) — собственный оверлей, см. CLAUDE.md /
+   docs/plan-fork.md о том, почему не callGenericPopup. ── */
+
+.imaginy-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.imaginy-modal {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 720px;
+    max-height: 85vh;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--SmartThemeBlurTintColor, #1e1e1e);
+    color: var(--SmartThemeBodyColor, #e0e0e0);
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.imaginy-modal-header {
+    padding: 12px 16px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, #444);
+    flex: 0 0 auto;
+}
+
+.imaginy-modal-body {
+    padding: 12px 16px;
+    overflow-y: auto;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.imaginy-modal-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--SmartThemeBorderColor, #444);
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.imaginy-modal-hint {
+    margin-right: auto;
+    align-self: center;
+    opacity: 0.6;
+    font-size: 0.8em;
+}
+
+.imaginy-modal-footer button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.imaginy-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.imaginy-field-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.imaginy-field label {
+    font-size: 0.85em;
+    opacity: 0.85;
+}
+
+.imaginy-field textarea,
+.imaginy-field input[type='text'] {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--SmartThemeBotMesBlurTintColor, rgba(255, 255, 255, 0.05));
+    color: var(--SmartThemeBodyColor, #e0e0e0);
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 0.95em;
+    resize: vertical;
+}
+
+.imaginy-copy-btn {
+    font-size: 0.8em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.imaginy-copy-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 600px) {
+    .imaginy-modal {
+        max-width: 100%;
+        max-height: 100%;
+        height: 100%;
+        border-radius: 0;
+    }
+
+    .imaginy-modal-footer {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .imaginy-modal-footer button {
+        width: 100%;
+    }
+}
