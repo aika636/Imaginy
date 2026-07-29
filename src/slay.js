@@ -21,8 +21,12 @@ const SLAY_MODULE = 'slay_image_gen';
 
 // upstream/index.js:3216 — VALID_ASPECT_RATIOS для OpenAI/Gemini-путей.
 const ASPECT_RATIOS_DEFAULT = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
-// upstream/index.js:4766 — у naistera в UI SLAY только три варианта.
-const ASPECT_RATIOS_NAISTERA = ['1:1', '3:2', '2:3'];
+// В UI самого SLAY у naistera только три варианта (upstream/index.js:4766), но список
+// там — ограничение его выпадашки, а не API: naistera-путь кладёт aspect_ratio в тело
+// запроса как есть, без сверки с VALID_ASPECT_RATIOS (upstream/index.js:3437 и :3451 —
+// проверка есть только у Gemini, :3378). Поэтому широкоформатные 16:9 / 9:16 сюда
+// добавлены сознательно; примет ли их конкретный бэкенд naistera — вопрос к нему.
+const ASPECT_RATIOS_NAISTERA = ['16:9', '9:16', '2:3', '3:2', '1:1'];
 
 function getSlaySettings() {
     try {
