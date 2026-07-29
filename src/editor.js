@@ -17,6 +17,10 @@ const FIELDS = [
     { key: 'preset', label: 'Пресет', kind: 'text' },
 ];
 
+// Метка сборки в логе и в диагностическом тосте: главный вопрос при разборе проблемы
+// на телефоне — доехал ли туда новый код вообще, или браузер отдаёт модуль из кэша.
+const EDITOR_BUILD = '0.1.1';
+
 let modalOpen = false;
 
 function isMac() {
@@ -24,6 +28,12 @@ function isMac() {
         return /Mac|iPhone|iPad|iPod/.test(navigator.platform ?? navigator.userAgent ?? '');
     } catch (err) {
         return false;
+    }
+}
+
+function applyStyles(el, styles) {
+    for (const [prop, value] of Object.entries(styles)) {
+        el.style[prop] = value;
     }
 }
 
@@ -96,32 +106,69 @@ function buildModal({ data, kind, regen }, resolve) {
 
     const overlay = document.createElement('div');
     overlay.className = 'imaginy-modal-overlay';
-    // Дублируем позиционирование инлайном: если style.css почему-то не подхватился
-    // (кэш мобильного браузера, свой порядок загрузки в чужой сборке ST) или движок
-    // не знает шорткат `inset`, оверлей без этих правил оказывается статическим
-    // блоком в конце <body> — то есть за пределами видимой области, и выглядит это
-    // ровно как «редактор не открывается». Значения совпадают с style.css.
-    overlay.style.position = 'fixed';
-    overlay.style.top = '0';
-    overlay.style.right = '0';
-    overlay.style.bottom = '0';
-    overlay.style.left = '0';
-    overlay.style.zIndex = '100000';
-    overlay.style.display = 'flex';
-    overlay.style.alignItems = 'center';
-    overlay.style.justifyContent = 'center';
+    // Критичная геометрия задаётся инлайном, а не только классом. Причины: style.css
+    // расширения может не подхватиться (кэш мобильного браузера, чужая сборка ST),
+    // движок может не знать шорткат `inset`, а правила хоста — схлопнуть нашу коробку.
+    // Инлайн бьёт любой внешний селектор без !important, поэтому окно видно даже
+    // тогда, когда от нашего CSS не осталось ничего. Значения совпадают со style.css.
+    applyStyles(overlay, {
+        position: 'fixed',
+        top: '0',
+        right: '0',
+        bottom: '0',
+        left: '0',
+        zIndex: '100000',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+        boxSizing: 'border-box',
+        background: 'rgba(0, 0, 0, 0.6)',
+    });
 
     const modal = document.createElement('div');
     modal.className = 'imaginy-modal';
+    applyStyles(modal, {
+        display: 'flex',
+        flexDirection: 'column',
+        boxSizing: 'border-box',
+        width: '100%',
+        maxWidth: '720px',
+        // min-height — страховка от схлопывания: без неё окно с нулевой высотой
+        // выглядит как тонкая полоска, и отличить это от «не открылось» нельзя.
+        minHeight: '120px',
+        // На узком экране style.css разворачивает окно на всю высоту (@media
+        // max-width: 600px), инлайн обязан вести себя так же — иначе он бы это правило
+        // перебил, ведь инлайн приоритетнее любого селектора.
+        maxHeight: window.innerWidth <= 600 ? '100%' : '85vh',
+        overflow: 'hidden',
+        borderRadius: '8px',
+        border: '1px solid var(--SmartThemeBorderColor, #444)',
+        background: 'var(--SmartThemeBlurTintColor, #1e1e1e)',
+        color: 'var(--SmartThemeBodyColor, #e0e0e0)',
+    });
     overlay.appendChild(modal);
 
+    // Внутренняя раскладка тоже инлайном — ровно тот минимум, без которого окно
+    // нечитаемо: шапка, прокручиваемое тело, прижатый низ. Остальное (цвета, отступы
+    // полей, вид кнопок) спокойно доедет из style.css, когда он есть.
     const header = document.createElement('div');
     header.className = 'imaginy-modal-header';
     header.textContent = 'Редактирование промпта';
+    applyStyles(header, { flex: '0 0 auto', padding: '12px 16px', fontWeight: '600' });
     modal.appendChild(header);
 
     const body = document.createElement('div');
     body.className = 'imaginy-modal-body';
+    applyStyles(body, {
+        flex: '1 1 auto',
+        minHeight: '0',
+        overflowY: 'auto',
+        padding: '12px 16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+    });
     modal.appendChild(body);
 
     let copyBtn = null;
@@ -159,6 +206,7 @@ function buildModal({ data, kind, regen }, resolve) {
         // пользовательские/модельные данные не должны никогда попадать в innerHTML.
         const existing = data?.[field.key];
         input.value = typeof existing === 'string' ? existing : existing != null ? String(existing) : '';
+        applyStyles(input, { width: '100%', boxSizing: 'border-box' });
         input.addEventListener('input', () => {
             dirty = true;
         });
@@ -180,6 +228,17 @@ function buildModal({ data, kind, regen }, resolve) {
 
     const footer = document.createElement('div');
     footer.className = 'imaginy-modal-footer';
+    applyStyles(footer, {
+        flex: '0 0 auto',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '8px',
+        padding: '12px 16px',
+        justifyContent: 'flex-end',
+        // На узком экране style.css ставит кнопки в столбик — инлайн повторяет это,
+        // иначе он бы перебил медиазапрос.
+        ...(window.innerWidth <= 600 ? { flexDirection: 'column', alignItems: 'stretch' } : {}),
+    });
     modal.appendChild(footer);
 
     const btnSave = document.createElement('button');
@@ -213,16 +272,23 @@ function buildModal({ data, kind, regen }, resolve) {
 
     document.body.appendChild(overlay);
 
-    // Диагностика «окно вставилось, но его не видно»: без консоли (телефон) это
-    // единственный способ отличить упавшую сборку модалки от CSS-проблемы.
+    // Диагностика «окно вставилось, но его не видно». Консоли на телефоне нет, поэтому
+    // измеренная геометрия уходит в тост как есть: по числам сразу видно, схлопнут
+    // оверлей, схлопнута модалка или окно уехало за пределы вьюпорта.
     try {
-        const rect = overlay.getBoundingClientRect();
-        logInfo(`openEditor: оверлей вставлен, rect=${Math.round(rect.width)}x${Math.round(rect.height)} @ ${Math.round(rect.left)},${Math.round(rect.top)}`);
-        if (rect.width < 1 || rect.height < 1 || rect.bottom < 1 || rect.top > window.innerHeight) {
-            toast('warning', 'Редактор открыт, но не виден — похоже, style.css расширения не применился');
+        const o = overlay.getBoundingClientRect();
+        const m = modal.getBoundingClientRect();
+        const geom = `overlay ${Math.round(o.width)}x${Math.round(o.height)}@${Math.round(o.left)},${Math.round(o.top)}`
+            + ` modal ${Math.round(m.width)}x${Math.round(m.height)}@${Math.round(m.left)},${Math.round(m.top)}`
+            + ` viewport ${window.innerWidth}x${window.innerHeight}`;
+        logInfo(`openEditor: ${geom} (v${EDITOR_BUILD})`);
+        const collapsed = m.width < 40 || m.height < 40;
+        const offscreen = m.bottom < 1 || m.top > window.innerHeight || m.right < 1 || m.left > window.innerWidth;
+        if (collapsed || offscreen) {
+            toast('warning', `Редактор v${EDITOR_BUILD} не виден: ${geom}`);
         }
     } catch (err) {
-        logWarn('openEditor: не удалось измерить оверлей', err);
+        logWarn('openEditor: не удалось измерить окно', err);
     }
 
     function buildResultData() {
