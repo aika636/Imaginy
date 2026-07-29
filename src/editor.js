@@ -19,7 +19,7 @@ const FIELDS = [
 
 // Метка сборки в логе и в диагностическом тосте: главный вопрос при разборе проблемы
 // на телефоне — доехал ли туда новый код вообще, или браузер отдаёт модуль из кэша.
-const EDITOR_BUILD = '0.1.1';
+const EDITOR_BUILD = '0.1.2';
 
 let modalOpen = false;
 
@@ -35,6 +35,34 @@ function applyStyles(el, styles) {
     for (const [prop, value] of Object.entries(styles)) {
         el.style[prop] = value;
     }
+}
+
+// transform / filter / backdrop-filter / perspective / will-change / contain на элементе
+// делают его содержащим блоком для потомков с position: fixed — такой потомок начинает
+// отсчитывать координаты от него, а не от вьюпорта. Оверлей вставляется прямо в <body>,
+// поэтому испортить точку отсчёта может только сам <body>: если он это делает (мобильная
+// тема ST с блюром), монтируемся уровнем выше, в <html>.
+function createsFixedContainingBlock(el) {
+    try {
+        const cs = getComputedStyle(el);
+        return (cs.transform && cs.transform !== 'none')
+            || (cs.filter && cs.filter !== 'none')
+            || (cs.backdropFilter && cs.backdropFilter !== 'none')
+            || (cs.perspective && cs.perspective !== 'none')
+            || /transform|filter|perspective/.test(cs.willChange ?? '')
+            || /paint|layout|strict|content/.test(cs.contain ?? '');
+    } catch (err) {
+        logWarn('createsFixedContainingBlock: не удалось прочитать стили', err);
+        return false;
+    }
+}
+
+function pickMountRoot() {
+    if (document.body && createsFixedContainingBlock(document.body)) {
+        logWarn('openEditor: <body> задаёт содержащий блок для fixed — монтирую оверлей в <html>');
+        return document.documentElement;
+    }
+    return document.body ?? document.documentElement;
 }
 
 async function copyToClipboard(text) {
@@ -111,20 +139,31 @@ function buildModal({ data, kind, regen }, resolve) {
     // движок может не знать шорткат `inset`, а правила хоста — схлопнуть нашу коробку.
     // Инлайн бьёт любой внешний селектор без !important, поэтому окно видно даже
     // тогда, когда от нашего CSS не осталось ничего. Значения совпадают со style.css.
+    const narrow = window.innerWidth <= 600;
     applyStyles(overlay, {
         position: 'fixed',
         top: '0',
-        right: '0',
-        bottom: '0',
         left: '0',
+        // Размер задаётся единицами вьюпорта, а НЕ парой top/bottom + right/left. Пара
+        // сторон растягивает элемент по содержащему блоку, а им для position:fixed
+        // становится не вьюпорт, а ближайший предок с transform/filter/backdrop-filter —
+        // а такие у мобильной темы ST есть. Отсюда и была полоска в 1-2 строки сверху:
+        // оверлей честно растягивался, только по чужой низкой коробке. vh/vw же всегда
+        // считаются от вьюпорта, каким бы ни был предок.
+        width: '100vw',
+        height: '100vh',
         zIndex: '100000',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '16px',
+        padding: narrow ? '8px' : '16px',
         boxSizing: 'border-box',
         background: 'rgba(0, 0, 0, 0.6)',
     });
+    // dvh учитывает свернувшуюся адресную строку и всплывшую клавиатуру. Присваиваем
+    // вторым шагом: движок без поддержки dvh молча проигнорирует строку и останется
+    // на 100vh выше.
+    overlay.style.height = '100dvh';
 
     const modal = document.createElement('div');
     modal.className = 'imaginy-modal';
@@ -133,16 +172,17 @@ function buildModal({ data, kind, regen }, resolve) {
         flexDirection: 'column',
         boxSizing: 'border-box',
         width: '100%',
-        maxWidth: '720px',
+        maxWidth: narrow ? '100%' : '720px',
         // min-height — страховка от схлопывания: без неё окно с нулевой высотой
         // выглядит как тонкая полоска, и отличить это от «не открылось» нельзя.
         minHeight: '120px',
-        // На узком экране style.css разворачивает окно на всю высоту (@media
-        // max-width: 600px), инлайн обязан вести себя так же — иначе он бы это правило
-        // перебил, ведь инлайн приоритетнее любого селектора.
-        maxHeight: window.innerWidth <= 600 ? '100%' : '85vh',
+        // На узком экране окно занимает почти весь экран (столько же, сколько даёт
+        // @media max-width: 600px в style.css — инлайн обязан повторять медиазапрос,
+        // иначе перебьёт его). На широком — прежние 85% высоты.
+        height: narrow ? '100%' : 'auto',
+        maxHeight: narrow ? '100%' : '85vh',
         overflow: 'hidden',
-        borderRadius: '8px',
+        borderRadius: narrow ? '0' : '8px',
         border: '1px solid var(--SmartThemeBorderColor, #444)',
         background: 'var(--SmartThemeBlurTintColor, #1e1e1e)',
         color: 'var(--SmartThemeBodyColor, #e0e0e0)',
@@ -175,10 +215,20 @@ function buildModal({ data, kind, regen }, resolve) {
 
     for (const field of FIELDS) {
         const wrap = document.createElement('div');
-        wrap.className = 'imaginy-field';
+        wrap.className = 'imaginy-field' + (field.key === 'prompt' ? ' imaginy-field-prompt' : '');
+        applyStyles(wrap, {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            // Промпт забирает всю свободную высоту: окно теперь во весь экран, и поле
+            // на фиксированные 8 строк посреди пустоты выглядело бы нелепо. minHeight:0
+            // обязателен — иначе flex-элемент не может стать ниже своего содержимого.
+            ...(field.key === 'prompt' ? { flex: '1 1 auto', minHeight: '0' } : { flex: '0 0 auto' }),
+        });
 
         const labelRow = document.createElement('div');
         labelRow.className = 'imaginy-field-label-row';
+        applyStyles(labelRow, { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' });
 
         const label = document.createElement('label');
         label.textContent = field.label;
@@ -206,7 +256,11 @@ function buildModal({ data, kind, regen }, resolve) {
         // пользовательские/модельные данные не должны никогда попадать в innerHTML.
         const existing = data?.[field.key];
         input.value = typeof existing === 'string' ? existing : existing != null ? String(existing) : '';
-        applyStyles(input, { width: '100%', boxSizing: 'border-box' });
+        applyStyles(input, {
+            width: '100%',
+            boxSizing: 'border-box',
+            ...(field.key === 'prompt' ? { flex: '1 1 auto', minHeight: '96px', resize: 'vertical' } : {}),
+        });
         input.addEventListener('input', () => {
             dirty = true;
         });
@@ -270,7 +324,7 @@ function buildModal({ data, kind, regen }, resolve) {
     footer.appendChild(btnSaveRegen);
     footer.appendChild(btnCancel);
 
-    document.body.appendChild(overlay);
+    pickMountRoot().appendChild(overlay);
 
     // Диагностика «окно вставилось, но его не видно». Консоли на телефоне нет, поэтому
     // измеренная геометрия уходит в тост как есть: по числам сразу видно, схлопнут

@@ -9,7 +9,7 @@ import { openEditor } from './src/editor.js';
 import { persistInstruction } from './src/persist.js';
 import { canRegen, requestRegen } from './src/regen.js';
 
-const VERSION = '0.1.1';
+const VERSION = '0.1.2';
 
 const BUSY_BTN_CLASS = 'imaginy-busy';
 const SPIN_ICON_CLASS = 'fa-solid fa-spinner imaginy-spin';

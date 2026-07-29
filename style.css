@@ -100,26 +100,32 @@
 
 .imaginy-modal-overlay {
     position: fixed;
-    /* Явные стороны вместо шортката inset: он неизвестен старым мобильным движкам
-       (Android WebView / Samsung Internet до 2021), и там оверлей превращался в
-       статический блок в конце <body> — за пределами экрана. */
+    /* Размер в единицах вьюпорта, а не парой top/bottom: содержащим блоком для
+       position:fixed становится ближайший предок с transform/filter/backdrop-filter
+       (в мобильной теме ST такие есть), и пара сторон растянула бы оверлей по его
+       низкой коробке — окно превращалось в полоску сверху. vh/vw от предка не зависят.
+       Дублируется инлайном в src/editor.js, см. docs/ui-ux.md. */
     top: 0;
-    right: 0;
-    bottom: 0;
     left: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
     z-index: 100000;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 16px;
+    box-sizing: border-box;
     background: rgba(0, 0, 0, 0.6);
 }
 
 .imaginy-modal {
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
     width: 100%;
     max-width: 720px;
+    min-height: 120px;
     max-height: 85vh;
     border-radius: 8px;
     overflow: hidden;
@@ -171,6 +177,20 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    flex: 0 0 auto;
+}
+
+/* Промпт растягивается на всю свободную высоту окна — остальные поля держат свой
+   размер. min-height: 0 обязателен, иначе flex-элемент не сожмётся ниже содержимого. */
+.imaginy-field-prompt {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.imaginy-field-prompt textarea {
+    flex: 1 1 auto;
+    min-height: 96px;
+    resize: vertical;
 }
 
 .imaginy-field-label-row {
@@ -213,7 +233,15 @@
     background: rgba(255, 255, 255, 0.08);
 }
 
+/* Узкий экран: окно занимает почти весь вьюпорт (оверлей оставляет рамку в 8px).
+   Каждое правило отсюда продублировано инлайном в src/editor.js через проверку
+   window.innerWidth <= 600 — инлайн приоритетнее медиазапроса и без двойника его
+   просто перебьёт. См. docs/ui-ux.md. */
 @media (max-width: 600px) {
+    .imaginy-modal-overlay {
+        padding: 8px;
+    }
+
     .imaginy-modal {
         max-width: 100%;
         max-height: 100%;
