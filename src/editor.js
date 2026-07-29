@@ -7,19 +7,21 @@
 
 import { toast } from './ctx.js';
 import { logError, logInfo, logWarn } from './log.js';
+import { getAspectRatioContext, setAspectRatioFromPrompt } from './slay.js';
 
+// Поля image_size / quality / preset намеренно не редактируются: у активного
+// naistera-пути SLAY их вообще не отправляет (upstream/index.js:3451 — в теле запроса
+// только prompt/aspect_ratio/model), а у остальных путей это глобальные настройки SLAY.
+// Ключи, если они были в инструкции, сохраняются как есть — см. buildResultData.
 const FIELDS = [
     { key: 'prompt', label: 'Промпт', kind: 'textarea', rows: 8, autofocus: true },
     { key: 'style', label: 'Стиль', kind: 'textarea', rows: 3 },
-    { key: 'aspect_ratio', label: 'Соотношение сторон', kind: 'text' },
-    { key: 'image_size', label: 'Размер', kind: 'text' },
-    { key: 'quality', label: 'Качество', kind: 'text' },
-    { key: 'preset', label: 'Пресет', kind: 'text' },
+    { key: 'aspect_ratio', label: 'Соотношение сторон', kind: 'select' },
 ];
 
 // Метка сборки в логе и в диагностическом тосте: главный вопрос при разборе проблемы
 // на телефоне — доехал ли туда новый код вообще, или браузер отдаёт модуль из кэша.
-const EDITOR_BUILD = '0.1.2';
+const EDITOR_BUILD = '0.2.0';
 
 let modalOpen = false;
 
@@ -212,6 +214,7 @@ function buildModal({ data, kind, regen }, resolve) {
     modal.appendChild(body);
 
     let copyBtn = null;
+    const aspectCtx = getAspectRatioContext();
 
     for (const field of FIELDS) {
         const wrap = document.createElement('div');
@@ -221,9 +224,12 @@ function buildModal({ data, kind, regen }, resolve) {
             flexDirection: 'column',
             gap: '4px',
             // Промпт забирает всю свободную высоту: окно теперь во весь экран, и поле
-            // на фиксированные 8 строк посреди пустоты выглядело бы нелепо. minHeight:0
-            // обязателен — иначе flex-элемент не может стать ниже своего содержимого.
-            ...(field.key === 'prompt' ? { flex: '1 1 auto', minHeight: '0' } : { flex: '0 0 auto' }),
+            // на фиксированные 8 строк посреди пустоты выглядело бы нелепо.
+            // minHeight здесь НЕ 0: с нулевым минимумом на низком экране блок сжимался
+            // сильнее своего содержимого, textarea вылезала за его границы и налезала
+            // на подпись следующего поля («Стиль»). Живой минимум = подпись + textarea,
+            // а лишнее уводится в прокрутку тела модалки (у него overflow-y: auto).
+            ...(field.key === 'prompt' ? { flex: '1 1 auto', minHeight: '124px' } : { flex: '0 0 auto' }),
         });
 
         const labelRow = document.createElement('div');
@@ -244,18 +250,35 @@ function buildModal({ data, kind, regen }, resolve) {
 
         wrap.appendChild(labelRow);
 
+        // Значение выставляем через .value / .textContent, а не интерполяцией в
+        // HTML-строку — пользовательские/модельные данные не должны никогда попадать
+        // в innerHTML.
+        const existing = data?.[field.key];
+        const existingValue = typeof existing === 'string' ? existing : existing != null ? String(existing) : '';
+
         let input;
         if (field.kind === 'textarea') {
             input = document.createElement('textarea');
             input.rows = field.rows;
+        } else if (field.kind === 'select') {
+            input = document.createElement('select');
+            // Пустое значение = ключа в инструкции нет; SLAY тогда берёт '1:1'
+            // (upstream/index.js:3437).
+            const choices = ['', ...aspectCtx.choices];
+            // Значение из инструкции может быть нестандартным (руками правленый JSON) —
+            // не теряем его молча, добавляем в список.
+            if (existingValue && !choices.includes(existingValue)) choices.push(existingValue);
+            for (const value of choices) {
+                const opt = document.createElement('option');
+                opt.value = value;
+                opt.textContent = value === '' ? 'Не задано (SLAY возьмёт 1:1)' : value;
+                input.appendChild(opt);
+            }
         } else {
             input = document.createElement('input');
             input.type = 'text';
         }
-        // Значение выставляем через .value, а не интерполяцией в HTML-строку —
-        // пользовательские/модельные данные не должны никогда попадать в innerHTML.
-        const existing = data?.[field.key];
-        input.value = typeof existing === 'string' ? existing : existing != null ? String(existing) : '';
+        input.value = existingValue;
         applyStyles(input, {
             width: '100%',
             boxSizing: 'border-box',
@@ -270,6 +293,44 @@ function buildModal({ data, kind, regen }, resolve) {
 
         inputs[field.key] = input;
         wrap.appendChild(input);
+
+        // Соотношение сторон из инструкции доходит до генерации только тогда, когда
+        // глобальная настройка SLAY стоит в «Из промпта» (auto) — иначе SLAY подставит
+        // своё значение и правка тихо ни на что не повлияет (src/slay.js).
+        if (field.key === 'aspect_ratio' && aspectCtx.overridden) {
+            const warn = document.createElement('div');
+            warn.className = 'imaginy-field-warning';
+            applyStyles(warn, {
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '0.8em',
+                opacity: '0.85',
+            });
+
+            const warnText = document.createElement('span');
+            warnText.textContent = `В настройках SLAY жёстко задано «${aspectCtx.global}» — это значение перекроет любое выбранное здесь.`;
+            warn.appendChild(warnText);
+
+            const fixBtn = document.createElement('button');
+            fixBtn.type = 'button';
+            fixBtn.className = 'imaginy-copy-btn';
+            fixBtn.textContent = 'Переключить SLAY на «Из промпта»';
+            fixBtn.addEventListener('click', () => {
+                const ok = setAspectRatioFromPrompt();
+                if (ok) {
+                    warn.remove();
+                    toast('success', 'SLAY переключён на «Из промпта» — соотношение теперь берётся из инструкции');
+                } else {
+                    toast('error', 'Не удалось изменить настройку SLAY — переключите вручную в панели SLAY Images');
+                }
+            });
+            warn.appendChild(fixBtn);
+
+            wrap.appendChild(warn);
+        }
+
         body.appendChild(wrap);
     }
 

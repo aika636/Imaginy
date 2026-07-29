@@ -181,10 +181,13 @@
 }
 
 /* Промпт растягивается на всю свободную высоту окна — остальные поля держат свой
-   размер. min-height: 0 обязателен, иначе flex-элемент не сожмётся ниже содержимого. */
+   размер. min-height здесь не 0: с нулевым минимумом на низком экране блок сжимался
+   сильнее содержимого, textarea вылезала за его границы и налезала на подпись поля
+   «Стиль». Минимум = подпись + минимальная textarea, лишнее уходит в прокрутку
+   .imaginy-modal-body. Дублируется инлайном в src/editor.js. */
 .imaginy-field-prompt {
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: 124px;
 }
 
 .imaginy-field-prompt textarea {
@@ -205,7 +208,20 @@
     opacity: 0.85;
 }
 
+/* Предупреждение под полем «Соотношение сторон»: глобальная настройка SLAY
+   перекрывает значение из инструкции (см. src/slay.js). */
+.imaginy-field-warning {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8em;
+    opacity: 0.85;
+    color: var(--SmartThemeQuoteColor, #e0b060);
+}
+
 .imaginy-field textarea,
+.imaginy-field select,
 .imaginy-field input[type='text'] {
     width: 100%;
     box-sizing: border-box;
