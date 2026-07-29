@@ -57,6 +57,48 @@ export function getAspectRatioContext() {
     };
 }
 
+// Выбранный в пикере SLAY стиль перекрывает per-image `style` из инструкции целиком:
+//
+//   upstream/index.js:3912  if (settings.slayStyle) style = settings.slayStyle;
+//
+// Это происходит внутри generateImageWithRetry, до всех API-путей, поэтому касается и
+// naistera, и Gemini, и OpenAI. Пока в пикере выбран стиль, поле «Стиль» в редакторе
+// Imaginy сохраняется в JSON, но на картинку не влияет.
+export function getStyleContext() {
+    const s = getSlaySettings();
+    const style = s ? String(s.slayStyle ?? '') : '';
+    const name = s ? String(s.slayStyleName ?? '') : '';
+    return {
+        available: Boolean(s),
+        style,
+        // Имя показываем пользователю; у SLAY пустое имя означает «Не заменять»
+        // (upstream/index.js:4767 — `settings.slayStyleName || 'Не заменять'`).
+        name: name || style,
+        overridden: Boolean(s) && style.trim().length > 0,
+    };
+}
+
+// Сбрасывает стиль в пикере SLAY на «Не заменять». Вызывается только по явному клику
+// в редакторе. Возвращает true при успехе.
+export function clearSlayStyle() {
+    try {
+        const s = getSlaySettings();
+        if (!s) return false;
+        s.slayStyle = '';
+        s.slayStyleName = '';
+        getCtx()?.saveSettingsDebounced?.();
+        // Панель SLAY может быть открыта прямо сейчас — синхронизируем подпись, иначе
+        // пользователь увидит в ней имя уже сброшенного стиля.
+        const nameEl = document.getElementById('slay_style_name');
+        if (nameEl) nameEl.textContent = 'Не заменять';
+        logInfo("clearSlayStyle: SLAY slayStyle = '' (Не заменять)");
+        return true;
+    } catch (err) {
+        logWarn('clearSlayStyle: не удалось изменить настройку SLAY', err);
+        return false;
+    }
+}
+
 // Переключает глобальную настройку SLAY на «Из промпта». Вызывается только по явному
 // клику в редакторе. Возвращает true при успехе.
 export function setAspectRatioFromPrompt() {

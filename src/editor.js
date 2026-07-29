@@ -7,7 +7,8 @@
 
 import { toast } from './ctx.js';
 import { logError, logInfo, logWarn } from './log.js';
-import { getAspectRatioContext, setAspectRatioFromPrompt } from './slay.js';
+import { getAspectRatioContext, setAspectRatioFromPrompt, getStyleContext, clearSlayStyle } from './slay.js';
+import { getSettings, saveSettings } from './settings.js';
 
 // Поля image_size / quality / preset намеренно не редактируются: у активного
 // naistera-пути SLAY их вообще не отправляет (upstream/index.js:3451 — в теле запроса
@@ -65,6 +66,36 @@ function pickMountRoot() {
         return document.documentElement;
     }
     return document.body ?? document.documentElement;
+}
+
+// Строка-подсказка под полем: текст + необязательная кнопка действия. Один и тот же
+// вид у предупреждений о перекрытии настройками SLAY и у заметки о подставленном стиле.
+function createHintRow(text, action) {
+    const row = document.createElement('div');
+    row.className = 'imaginy-field-warning';
+    applyStyles(row, {
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: '8px',
+        fontSize: '0.8em',
+        opacity: '0.85',
+    });
+
+    const span = document.createElement('span');
+    span.textContent = text;
+    row.appendChild(span);
+
+    if (action) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'imaginy-copy-btn';
+        btn.textContent = action.label;
+        btn.addEventListener('click', () => action.onClick(row));
+        row.appendChild(btn);
+    }
+
+    return row;
 }
 
 async function copyToClipboard(text) {
@@ -215,6 +246,15 @@ function buildModal({ data, kind, regen }, resolve) {
 
     let copyBtn = null;
     const aspectCtx = getAspectRatioContext();
+    const styleCtx = getStyleContext();
+    // Настройки читаем один раз на открытие: нужен только запомненный стиль. Если
+    // настройки почему-то недоступны, редактор обязан открыться и без них.
+    let lastStyle = '';
+    try {
+        lastStyle = String(getSettings().lastStyle ?? '');
+    } catch (err) {
+        logWarn('openEditor: не удалось прочитать настройки (запомненный стиль)', err);
+    }
 
     for (const field of FIELDS) {
         const wrap = document.createElement('div');
@@ -254,7 +294,14 @@ function buildModal({ data, kind, regen }, resolve) {
         // HTML-строку — пользовательские/модельные данные не должны никогда попадать
         // в innerHTML.
         const existing = data?.[field.key];
-        const existingValue = typeof existing === 'string' ? existing : existing != null ? String(existing) : '';
+        let existingValue = typeof existing === 'string' ? existing : existing != null ? String(existing) : '';
+
+        // Стиль в инструкции есть далеко не всегда (SLAY кладёт его только когда модель
+        // выдала [style: ...]), а пользователю он нужен один и тот же от картинки к
+        // картинке и от чата к чату. Поэтому в пустое поле подставляем последний
+        // сохранённый стиль — с явной подписью, чтобы подстановка не была молчаливой.
+        const styleFromMemory = field.key === 'style' && !existingValue.trim() && lastStyle.trim().length > 0;
+        if (styleFromMemory) existingValue = lastStyle;
 
         let input;
         if (field.kind === 'textarea') {
@@ -294,41 +341,63 @@ function buildModal({ data, kind, regen }, resolve) {
         inputs[field.key] = input;
         wrap.appendChild(input);
 
+        // Стиль из инструкции доходит до генерации только когда в пикере SLAY выбрано
+        // «Не заменять»: иначе settings.slayStyle перекрывает его целиком, до всех
+        // API-путей (upstream/index.js:3912, src/slay.js).
+        if (field.key === 'style' && styleCtx.overridden) {
+            wrap.appendChild(createHintRow(
+                `В SLAY выбран стиль «${styleCtx.name}» — он перекроет любой стиль, вписанный здесь.`,
+                {
+                    label: 'Сбросить стиль SLAY',
+                    onClick: (row) => {
+                        if (clearSlayStyle()) {
+                            row.remove();
+                            toast('success', 'Стиль SLAY сброшен на «Не заменять» — теперь применяется стиль из инструкции');
+                        } else {
+                            toast('error', 'Не удалось изменить настройку SLAY — сбросьте стиль вручную в панели SLAY Images');
+                        }
+                    },
+                },
+            ));
+        }
+
+        if (styleFromMemory) {
+            wrap.appendChild(createHintRow('Подставлен последний использованный стиль.', {
+                label: 'Забыть',
+                onClick: (row) => {
+                    input.value = '';
+                    dirty = true;
+                    try {
+                        const s = getSettings();
+                        s.lastStyle = '';
+                        saveSettings();
+                    } catch (err) {
+                        logWarn('openEditor: не удалось забыть стиль', err);
+                    }
+                    row.remove();
+                    input.focus();
+                },
+            }));
+        }
+
         // Соотношение сторон из инструкции доходит до генерации только тогда, когда
         // глобальная настройка SLAY стоит в «Из промпта» (auto) — иначе SLAY подставит
         // своё значение и правка тихо ни на что не повлияет (src/slay.js).
         if (field.key === 'aspect_ratio' && aspectCtx.overridden) {
-            const warn = document.createElement('div');
-            warn.className = 'imaginy-field-warning';
-            applyStyles(warn, {
-                display: 'flex',
-                flexWrap: 'wrap',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '0.8em',
-                opacity: '0.85',
-            });
-
-            const warnText = document.createElement('span');
-            warnText.textContent = `В настройках SLAY жёстко задано «${aspectCtx.global}» — это значение перекроет любое выбранное здесь.`;
-            warn.appendChild(warnText);
-
-            const fixBtn = document.createElement('button');
-            fixBtn.type = 'button';
-            fixBtn.className = 'imaginy-copy-btn';
-            fixBtn.textContent = 'Переключить SLAY на «Из промпта»';
-            fixBtn.addEventListener('click', () => {
-                const ok = setAspectRatioFromPrompt();
-                if (ok) {
-                    warn.remove();
-                    toast('success', 'SLAY переключён на «Из промпта» — соотношение теперь берётся из инструкции');
-                } else {
-                    toast('error', 'Не удалось изменить настройку SLAY — переключите вручную в панели SLAY Images');
-                }
-            });
-            warn.appendChild(fixBtn);
-
-            wrap.appendChild(warn);
+            wrap.appendChild(createHintRow(
+                `В настройках SLAY жёстко задано «${aspectCtx.global}» — это значение перекроет любое выбранное здесь.`,
+                {
+                    label: 'Переключить SLAY на «Из промпта»',
+                    onClick: (row) => {
+                        if (setAspectRatioFromPrompt()) {
+                            row.remove();
+                            toast('success', 'SLAY переключён на «Из промпта» — соотношение теперь берётся из инструкции');
+                        } else {
+                            toast('error', 'Не удалось изменить настройку SLAY — переключите вручную в панели SLAY Images');
+                        }
+                    },
+                },
+            ));
         }
 
         body.appendChild(wrap);
@@ -444,7 +513,23 @@ function buildModal({ data, kind, regen }, resolve) {
         }
     }
 
+    // Запоминаем только непустой стиль: очистка поля означает «у этой картинки стиля
+    // нет», а не «забудь мой стиль навсегда» (для этого есть кнопка «Забыть»).
+    function rememberStyle() {
+        const value = (inputs.style?.value ?? '').trim();
+        if (!value) return;
+        try {
+            const s = getSettings();
+            if (s.lastStyle === value) return;
+            s.lastStyle = value;
+            saveSettings();
+        } catch (err) {
+            logWarn('openEditor: не удалось запомнить стиль', err);
+        }
+    }
+
     function doSave(action) {
+        rememberStyle();
         settle({ action, data: buildResultData() });
     }
 
