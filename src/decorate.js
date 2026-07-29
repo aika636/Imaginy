@@ -2,7 +2,7 @@
 // Единственное место, где живут CSS-селекторы SLAY — переименование класса в апстриме
 // чинится правкой одного объекта ниже (см. docs/plan-fork.md, раздел «Риски»).
 
-import { getCtx, getEventTypes } from './ctx.js';
+import { getCtx, getEventTypes, toast } from './ctx.js';
 import { logError, logWarn, warnOnce } from './log.js';
 import { getSettings } from './settings.js';
 
@@ -70,9 +70,19 @@ function makeButton(kind) {
         e.stopPropagation();
         e.preventDefault();
         try {
-            onEditCallback?.(btn.__imaginyTarget, kind, btn);
+            // onEdit асинхронный: синхронный catch ловит только падение до первого await,
+            // всё остальное иначе уходило бы в необработанный reject — молча, без следа
+            // в UI. Ловим оба случая одинаково.
+            const maybePromise = onEditCallback?.(btn.__imaginyTarget, kind, btn);
+            if (maybePromise && typeof maybePromise.catch === 'function') {
+                maybePromise.catch((err) => {
+                    logError('onEdit callback упал (async)', err);
+                    toast('error', `Ошибка редактора: ${err?.message ?? err}`);
+                });
+            }
         } catch (err) {
             logError('onEdit callback упал', err);
+            toast('error', `Ошибка редактора: ${err?.message ?? err}`);
         }
     });
     return btn;

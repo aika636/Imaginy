@@ -100,7 +100,13 @@
 
 .imaginy-modal-overlay {
     position: fixed;
-    inset: 0;
+    /* Явные стороны вместо шортката inset: он неизвестен старым мобильным движкам
+       (Android WebView / Samsung Internet до 2021), и там оверлей превращался в
+       статический блок в конце <body> — за пределами экрана. */
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     z-index: 100000;
     display: flex;
     align-items: center;
