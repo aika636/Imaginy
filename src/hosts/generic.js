@@ -44,6 +44,10 @@ export const GENERIC = Object.freeze({
     ownWrapFallback: true,
     btnPlacement: 'top-left',
 
+    // Форк не опознан — что именно сделает кнопка меню сообщения, неизвестно, поэтому
+    // фолбэк на неё запрещён (та же причина, что у REGEN_BUTTONS выше).
+    messageRegenFallback: false,
+
     quirks: Object.freeze({
         aspectAuto: false,
         styleOverride: null,

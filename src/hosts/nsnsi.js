@@ -55,6 +55,10 @@ export const NSNSI = Object.freeze({
     // Свои кнопки форк держит в правом верхнем углу — карандаш ставим в левый.
     btnPlacement: 'top-left',
 
+    // naisteraPreset тоже переживает смену форка — если своей кнопки нет, пробуем
+    // кнопку меню сообщения (src/regen.js).
+    messageRegenFallback: true,
+
     quirks: Object.freeze({
         aspectAuto: false,
         styleOverride: null,

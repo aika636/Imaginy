@@ -149,6 +149,41 @@ function check(name, actual, expected) {
     check('0xl0cal: причина про «всё сообщение»', /несколько картинок/.test(verdict.reason), true);
 }
 
+// ── 0xl0cal после delidgi: ключи обоих в настройках, DOM-улик нет ────────────────
+// Ключи delidgi (вес 9) переживают смену форка и всегда перебивают единственный ключ
+// 0xl0cal (вес 3), а своих DOM-улик у 0xl0cal нет — профиль навсегда остаётся DELIDGI.
+// Кнопки delidgi в разметке при этом нет, а кнопка меню сообщения есть: перегенерация
+// должна пройти через неё (фолбэк в src/regen.js).
+{
+    extensionSettings = {
+        inline_image_gen: {
+            imgActionRegen: true, avatarItems: [], connectionPresets: [],
+            additionalReferences: [], styles: [], activeStyleId: '', aspectRatio: '3:2',
+        },
+    };
+    const root = mes(`<img data-iig-instruction='${INSTR}' src="/a.png">`);
+    const { host, regen } = await freshModules();
+    check('0xl0cal-после-delidgi: детект остаётся delidgi', host.getHost().id, 'sillyimages-delidgi');
+    const img = document.querySelector('img[data-iig-instruction]');
+    check('0xl0cal-после-delidgi: canRegen через кнопку сообщения', regen.canRegen(img, 'image').ok, true);
+    check(
+        '0xl0cal-после-delidgi: кнопка — .iig-regenerate-btn',
+        regen.canRegen(img, 'image').btn?.classList.contains('iig-regenerate-btn'),
+        true,
+    );
+    check('0xl0cal-после-delidgi: requestRegen разрешён', regen.requestRegen(img, 'image').ok, true);
+
+    // Две картинки — кнопка сообщения перегенерирует обе, фолбэк не применяется.
+    const root2 = mes(`
+        <img data-iig-instruction='${INSTR}' src="/a.png">
+        <img data-iig-instruction='${INSTR}' src="/b.png">`);
+    check(
+        '0xl0cal-после-delidgi: две картинки → отказ',
+        regen.canRegen(root2.querySelector('img[data-iig-instruction]'), 'image').ok,
+        false,
+    );
+}
+
 // ── неизвестный форк ────────────────────────────────────────────────────────────
 {
     extensionSettings = {};

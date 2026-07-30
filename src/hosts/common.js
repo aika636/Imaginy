@@ -63,12 +63,21 @@ export function targetIsStale(el) {
     }
 }
 
-export function no(reason) {
-    return { ok: false, reason, btn: null };
+// Кнопка «перегенерировать картинки» в меню сообщения — единственная кнопка, которую
+// рисует форк 0xl0cal, и фолбэк-путь для остальных профилей (см. regenViaMessageFallback).
+export const MESSAGE_REGEN_BTN = '.iig-regenerate-btn';
+
+// Класс отказа. Нужен, чтобы src/regen.js мог различить «кнопки по профилю нет вовсе»
+// (единственный случай, когда осмысленно пробовать фолбэк) от «кнопка есть, но сейчас
+// нельзя» — busy/stale/multiple. Разбирать русскую фразу отказа для этого нельзя.
+export const REFUSAL_NO_BUTTON = 'noButton';
+
+export function no(reason, code = null) {
+    return { ok: false, reason, btn: null, code };
 }
 
 export function yes(btn) {
-    return { ok: true, reason: '', btn };
+    return { ok: true, reason: '', btn, code: null };
 }
 
 // Кнопка «перегенерировать картинки» в меню сообщения (.extraMesButtons). Она
@@ -77,27 +86,50 @@ export function yes(btn) {
 // именно эту картинку» можно только когда картинка в сообщении одна. Иначе честнее
 // отказаться, чем молча перегенерировать соседей.
 export function regenViaMessageButton(targetEl, { btnSelector, reasons }) {
-    if (targetIsStale(targetEl)) return no(reasons.stale ?? reasons.busy);
+    if (targetIsStale(targetEl)) return no(reasons.stale ?? reasons.busy, 'stale');
 
     const mes = messageOf(targetEl);
     const btn = mes ? mes.querySelector(btnSelector) : null;
-    if (!btn) return no(reasons.noButton);
+    if (!btn) return no(reasons.noButton, REFUSAL_NO_BUTTON);
 
-    if (countInstructionsInMessage(targetEl) > 1) return no(reasons.multiple);
+    if (countInstructionsInMessage(targetEl) > 1) return no(reasons.multiple, 'multiple');
 
     return yes(btn);
+}
+
+// Фолбэк для профиля, у которого «своей» кнопки перегенерации на месте не нашлось.
+//
+// Зачем: детект хоста по ключам настроек переживает смену форка (src/host.js, п.2), а
+// у 0xl0cal своих DOM-улик нет вообще — поэтому у того, кто раньше пользовался delidgi,
+// профиль навсегда останется DELIDGI, хотя картинки рисует 0xl0cal. Кнопки delidgi в
+// разметке нет, а кнопка меню сообщения — есть, и она перечитывает промпты из текста
+// сообщения, то есть нашу правку видит. Ограничения те же, что у профиля L0CAL:
+// перегенерируется всё сообщение, поэтому разрешаем только когда цель в сообщении одна.
+const FALLBACK_REASONS = Object.freeze({
+    noButton: 'Кнопка перегенерации не найдена — возможно, расширение картинок отключено. Промпт сохранён.',
+    stale: 'Изображение уже перерисовано — промпт сохранён, нажмите карандаш заново и перегенерируйте.',
+    multiple:
+        'В этом сообщении несколько картинок, а перегенерация здесь работает только на всё сообщение сразу. '
+        + 'Промпт сохранён — запустите перегенерацию кнопкой в меню сообщения, если готовы обновить все картинки.',
+});
+
+export function regenViaMessageFallback(targetEl) {
+    return regenViaMessageButton(targetEl, {
+        btnSelector: MESSAGE_REGEN_BTN,
+        reasons: FALLBACK_REASONS,
+    });
 }
 
 // Кнопка перегенерации внутри обёртки хоста — общий случай для SLAY, delidgi и
 // notsosillynotsoimages. busyClass задаётся только там, где хост его реально ставит.
 export function regenViaWrapButton(targetEl, { wrapSelector, btnSelector, busyClass, reasons }) {
-    if (targetIsStale(targetEl)) return no(reasons.stale ?? reasons.busy);
+    if (targetIsStale(targetEl)) return no(reasons.stale ?? reasons.busy, 'stale');
 
     const wrap = safeClosest(targetEl, wrapSelector);
     const btn = wrap ? wrap.querySelector(btnSelector) : null;
-    if (!wrap || !btn) return no(reasons.noButton);
+    if (!wrap || !btn) return no(reasons.noButton, REFUSAL_NO_BUTTON);
 
-    if (busyClass && btn.classList.contains(busyClass)) return no(reasons.busy);
+    if (busyClass && btn.classList.contains(busyClass)) return no(reasons.busy, 'busy');
 
     return yes(btn);
 }

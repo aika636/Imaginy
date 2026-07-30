@@ -124,6 +124,38 @@ export function escapeForText(json) {
     return json.replace(/&/g, '&amp;').replace(/'/g, '&#39;');
 }
 
+// Буквальные HTML-энтити внутри промпта — единственный текст, который наш цикл
+// «прочитать → сохранить» не переживает без искажения, и починить это на нашей стороне
+// нельзя: decodeEntities — дословный порт хоста (см. шапку модуля), а любое расхождение
+// с ним будет хуже самого искажения. Поэтому просто честно предупреждаем один раз.
+//
+//   * "&quot;" / "&#34;" — хост (и Imaginy) декодирует их в '"' ДО JSON.parse, то есть
+//     они превратятся в служебные кавычки JSON и сломают разбор атрибута совсем;
+//   * "&#39;" / "&apos;" — декодируются в апостроф, так что после сохранения в промпте
+//     окажется обычный "'" вместо написанной энтити.
+function warnOnLiteralEntities(data) {
+    if (typeof data !== 'object' || data === null) return;
+    for (const value of Object.values(data)) {
+        if (typeof value !== 'string') continue;
+        if (value.includes('&quot;') || value.includes('&#34;')) {
+            warnOnce(
+                'literal-quot-entity',
+                'В промпте есть буквальная энтити &quot; или &#34;. При чтении атрибута она превратится в '
+                + 'кавычку и сломает разбор data-iig-instruction — и у самого расширения картинок, и у Imaginy. '
+                + 'Замените её на обычную кавычку.',
+            );
+        }
+        if (value.includes('&#39;') || value.includes('&apos;')) {
+            warnOnce(
+                'literal-apos-entity',
+                'В промпте есть буквальная энтити &#39; или &apos;. После сохранения она превратится в обычный '
+                + 'апостроф — так работает декодирование атрибута у самого расширения картинок.',
+            );
+        }
+    }
+}
+
 export function serializeForText(data) {
+    warnOnLiteralEntities(data);
     return escapeForText(serializeForDom(data));
 }

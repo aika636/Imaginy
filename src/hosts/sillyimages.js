@@ -26,7 +26,9 @@
 //   738-745 / 526-531  applyConfiguredStyleToTag/resolveEffectiveStyle — активный пресет
 //   стиля так же перекрывает per-image style.
 
-import { ATTR, SEL_IMAGE, SEL_VIDEO, regenViaMessageButton, regenViaWrapButton } from './common.js';
+import {
+    ATTR, MESSAGE_REGEN_BTN, SEL_IMAGE, SEL_VIDEO, regenViaMessageButton, regenViaWrapButton,
+} from './common.js';
 
 const COMMON_REASONS = {
     noButton: 'Кнопка перегенерации не найдена — возможно, расширение картинок отключено. Промпт сохранён.',
@@ -67,6 +69,11 @@ export const DELIDGI = Object.freeze({
     ownWrapFallback: true,
     btnPlacement: 'top-left',
 
+    // Ключи delidgi остаются в настройках навсегда, а у 0xl0cal своих DOM-улик нет —
+    // так что за этим профилем реально может стоять 0xl0cal. Если кнопки delidgi на
+    // месте нет, разрешаем фолбэк на кнопку меню сообщения (src/regen.js).
+    messageRegenFallback: true,
+
     quirks: Object.freeze({
         aspectAuto: false,
         styleOverride: 'preset',
@@ -77,7 +84,7 @@ export const DELIDGI = Object.freeze({
         // картинка/видео в сообщении одно).
         if (kind === 'video') {
             return regenViaMessageButton(targetEl, {
-                btnSelector: '.iig-regenerate-btn',
+                btnSelector: MESSAGE_REGEN_BTN,
                 reasons: { ...DELIDGI_REASONS, noButton: DELIDGI_REASONS.video },
             });
         }
@@ -125,6 +132,9 @@ export const L0CAL = Object.freeze({
     ownWrapFallback: true,
     btnPlacement: 'top-left',
 
+    // Фолбэк здесь бессмысленен: кнопка меню сообщения — и есть основной путь профиля.
+    messageRegenFallback: false,
+
     quirks: Object.freeze({
         aspectAuto: false,
         styleOverride: 'preset',
@@ -134,7 +144,7 @@ export const L0CAL = Object.freeze({
         // Единственный путь — кнопка в меню сообщения, и она перегенерирует всё
         // сообщение: разрешаем только когда цель в сообщении одна.
         return regenViaMessageButton(targetEl, {
-            btnSelector: '.iig-regenerate-btn',
+            btnSelector: MESSAGE_REGEN_BTN,
             reasons: L0CAL_REASONS,
         });
     },

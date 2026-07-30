@@ -46,6 +46,11 @@ const KEY_USERS = PROFILES.reduce((acc, p) => {
     return acc;
 }, {});
 
+// Все DOM- и глобальные улики всех профилей, собранные в одном месте: isHostPresent()
+// не должен дублировать литералы селекторов — они живут только в профилях (CLAUDE.md).
+const ALL_DOM_CLUES = PROFILES.flatMap((p) => p.detect.dom).join(', ');
+const ALL_GLOBAL_CLUES = Object.freeze([...new Set(PROFILES.flatMap((p) => p.detect.globals))]);
+
 // Как часто перепроверять предварительный вывод (GENERIC или «опознан только по
 // настройкам»). Детект дешёвый — несколько querySelector — но вызывается он на каждом
 // обходе DOM, поэтому без троттлинга это лишняя работа.
@@ -163,8 +168,10 @@ export function resetHostDetection() {
 export function isHostPresent() {
     try {
         if (document.querySelector(`[${ATTR}]`)) return true;
-        if (document.querySelector('.iig-img-wrap, .iig-image-wrapper, .iig-generated-image')) return true;
-        if (window.slayWardrobe !== undefined) return true;
+        if (ALL_DOM_CLUES && document.querySelector(ALL_DOM_CLUES)) return true;
+        for (const name of ALL_GLOBAL_CLUES) {
+            if (window[name] !== undefined) return true;
+        }
         for (const module of Object.keys(MODULE_USERS)) {
             if (settingsOf(module)) return true;
         }

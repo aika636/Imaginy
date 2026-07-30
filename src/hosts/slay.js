@@ -45,6 +45,11 @@ export const SLAY = Object.freeze({
     // карандаш встаёт правее неё.
     btnPlacement: 'beside-host',
 
+    // Ключ slay_image_gen переживает переход на любой из форков (src/host.js, п.2), а
+    // 0xl0cal своих DOM-улик не оставляет — если кнопки SLAY на месте нет, пробуем
+    // кнопку меню сообщения (src/regen.js).
+    messageRegenFallback: true,
+
     quirks: Object.freeze({
         // per-image aspect_ratio SLAY использует только при глобальном 'auto'
         // (upstream/index.js:3260, :3377, :3437) — см. src/hostquirks.js.

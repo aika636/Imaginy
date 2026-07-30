@@ -44,6 +44,26 @@ let onEditCallback = null;
 let observer = null;
 let scanTimer = null;
 let pendingScanRoots = new Set();
+// Все отложенные обходы (scheduleScan и отложенный повтор из resolveContainer): без
+// учёта их id выключение декорации не гасило бы уже поставленные таймеры, и после
+// выключения карандаши возвращались бы сами.
+const pendingTimers = new Set();
+
+// setTimeout, id которого не теряется: снимается из набора при срабатывании и может
+// быть погашен целиком через clearPendingTimers().
+function later(fn, delay) {
+    const id = setTimeout(() => {
+        pendingTimers.delete(id);
+        fn();
+    }, delay);
+    pendingTimers.add(id);
+    return id;
+}
+
+function clearPendingTimers() {
+    for (const id of pendingTimers) clearTimeout(id);
+    pendingTimers.clear();
+}
 
 function makeButton(kind, { errorMod = false } = {}) {
     const btn = document.createElement('button');
@@ -133,7 +153,7 @@ function resolveContainer(el, { hostWraps = true } = {}) {
             el.dataset.imaginySeen = String(now);
             // Один отложенный повтор: мутаций может больше не быть, и без него
             // карандаш не появился бы никогда.
-            setTimeout(() => {
+            later(() => {
                 try {
                     if (el.isConnected) decorateRoot(el);
                 } catch (err) {
@@ -285,7 +305,7 @@ function scan() {
 // постановкой таймера и его срабатыванием (тот же случай, из-за которого SLAY вешает
 // свой лайтбокс на document, а не на #chat — upstream ~6080).
 function scheduleScan(getRoot, delay) {
-    setTimeout(() => {
+    later(() => {
         try {
             decorateRoot(getRoot() ?? document);
         } catch (err) {
@@ -347,11 +367,34 @@ function clearAllDecoration() {
     }
 }
 
+// Отцепляет наблюдение за #chat и гасит все отложенные обходы. Флаг на #chat снимаем
+// обязательно: bindObserver считает его признаком «здесь уже наблюдаем» и без снятия
+// повторное включение декорации не перевесило бы observer.
+function stopObserving() {
+    try {
+        observer?.disconnect();
+    } catch (err) {
+        logWarn('stopObserving: disconnect упал', err);
+    }
+    observer = null;
+
+    const chatEl = chatRoot();
+    if (chatEl?.dataset?.imaginyObserverBound) delete chatEl.dataset.imaginyObserverBound;
+
+    if (scanTimer) clearTimeout(scanTimer);
+    scanTimer = null;
+    pendingScanRoots = new Set();
+    clearPendingTimers();
+}
+
 export function setDecorationEnabled(flag) {
     if (flag) {
+        // Наблюдение могло быть отцеплено предыдущим выключением — поднимаем заново.
+        bindObserver(chatRoot());
         scan();
         return;
     }
+    stopObserving();
     clearAllDecoration();
     // Собственные video-обёртки намеренно не разбираем — они безвредны, а разборка
     // рискует потревожить DOM, которым может владеть ST (см. спецификацию задачи).

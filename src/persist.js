@@ -1,13 +1,15 @@
-// Запись изменённой инструкции обратно в сообщение (все пять мест хранения текста)
+// Запись изменённой инструкции обратно в сообщение (все места хранения текста)
 // и в DOM. Единственное место, где Imaginy пишет в объект сообщения ST.
 
 import { getCtx } from './ctx.js';
 import { logInfo, logWarn } from './log.js';
 import { escapeForText, serializeForDom, serializeForText } from './instruction.js';
 
-// Обходит все пять мест, где SLAY хранит текст сообщения (upstream
-// replaceImageSrcEverywhere, upstream/index.js ~3542-3574, задокументировано в
-// docs/sillytavern-api.md §2.4), и применяет transform(str) -> str к каждому.
+// Обходит все места, где SLAY хранит текст сообщения — «пять мест» в терминах апстрима,
+// шесть отдельных полей, если считать display_text и extblocks в swipe_info раздельно
+// (docs/data-model.md). Дословный порт replaceImageSrcEverywhere (upstream/index.js
+// ~3542-3574, задокументировано в docs/sillytavern-api.md §2.4); применяет
+// transform(str) -> str к каждому полю.
 // Возвращает true, если хотя бы одно место реально изменилось (transform вернул
 // другую строку).
 function walkMessageStrings(message, transform) {
