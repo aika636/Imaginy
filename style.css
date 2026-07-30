@@ -1,7 +1,8 @@
 /* Imaginy — все стили расширения. Только .imaginy-* классы. */
 
-/* Наша собственная обёртка для <video> — SLAY никогда не оборачивает видео
-   (docs/sillytavern-api.md §2.1 п.2), поэтому копируем правила .iig-img-wrap. */
+/* Наша собственная обёртка: нужна для <video> (его не оборачивает ни один хост,
+   docs/sillytavern-api.md §2.1 п.2) и для картинок в форках, которые обёртку не делают
+   (0xl0cal — см. docs/hosts.md). Правила скопированы с .iig-img-wrap. */
 .imaginy-img-wrap {
     position: relative;
     display: inline-block;
@@ -10,8 +11,10 @@
     vertical-align: top;
 }
 
-/* Кнопка-карандаш. Смещена относительно .iig-regen-btn SLAY (top:8px; left:8px;
-   34x34), чтобы не перекрываться: left:50px = 8 (отступ SLAY) + 34 (её ширина) + 8. */
+/* Кнопка-карандаш. По умолчанию смещена относительно .iig-regen-btn SLAY (top:8px;
+   left:8px; 34x34), чтобы не перекрываться: left:50px = 8 (отступ SLAY) + 34 (её
+   ширина) + 8. Форки держат свои кнопки в правом верхнем углу — там карандаш встаёт в
+   левый, см. .imaginy-edit-btn--tl и btnPlacement в профилях (src/hosts/*.js). */
 .imaginy-edit-btn {
     position: absolute;
     top: 8px;
@@ -41,10 +44,12 @@
     background: rgba(0, 0, 0, 0.8);
 }
 
-.iig-img-wrap:hover .imaginy-edit-btn,
-.iig-img-wrap:focus-within .imaginy-edit-btn,
-.imaginy-img-wrap:hover .imaginy-edit-btn,
-.imaginy-img-wrap:focus-within .imaginy-edit-btn,
+/* .imaginy-host-wrap — общий маркер, который decorateTarget() (src/decorate.js) ставит
+   на любой контейнер кнопки: обёртку хоста (.iig-img-wrap у SLAY, .iig-image-wrapper у
+   форков sillyimages/notsosillynotsoimages), нашу .imaginy-img-wrap или div-плашку
+   ошибки. Один общий класс вместо перечисления селекторов каждого хоста поимённо. */
+.imaginy-host-wrap:hover .imaginy-edit-btn,
+.imaginy-host-wrap:focus-within .imaginy-edit-btn,
 .imaginy-busy .imaginy-edit-btn,
 .imaginy-edit-btn.imaginy-busy {
     opacity: 1;
@@ -76,14 +81,24 @@
     }
 }
 
-/* Плашка ошибки генерации — это блочный div без .iig-img-wrap, кнопку ставим в
-   правый верхний угол, чтобы не путать с местом, где была бы картинка, и держим
-   всегда видимой (плашку никто не "наводит", чтобы разглядеть). */
+/* Неудавшаяся генерация. У SLAY это блочный div-плашка без .iig-img-wrap: кнопку
+   ставим в правый верхний угол, чтобы не путать с местом, где была бы картинка. У
+   форков это img.iig-error-image — там кнопка живёт в обёртке, но так же видна всегда:
+   плашку/заглушку никто не "наводит", чтобы разглядеть кнопку. */
 .imaginy-edit-btn--error {
     top: 8px;
     left: auto;
     right: 8px;
     opacity: 1;
+}
+
+/* Левый верхний угол — для форков, у которых свои кнопки действий справа
+   (.iig-image-actions у delidgi: top:6; right:6; .iig-action-btn у
+   notsosillynotsoimages — там же). Идёт ПОСЛЕ --error, чтобы у ошибочной картинки в
+   форке карандаш не наехал на их кнопку перегенерации. */
+.imaginy-edit-btn--tl {
+    left: 8px;
+    right: auto;
 }
 
 /* .iig-error-placeholder — класс SLAY, мы его не трогаем напрямую. Это правило

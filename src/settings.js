@@ -3,6 +3,7 @@
 
 import { getCtx } from './ctx.js';
 import { logError, logInfo } from './log.js';
+import { getHost } from './host.js';
 
 export const MODULE_NAME = 'Imaginy';
 
@@ -84,5 +85,27 @@ export async function initSettingsUI(onSettingsChanged) {
         saveSettings();
     });
 
+    bindHostName();
+
     logInfo('панель настроек инициализирована');
+}
+
+// Показывает в панели, какое расширение картинок Imaginy считает активным. Детект по
+// DOM уточняется по мере отрисовки картинок (src/host.js), поэтому подпись обновляем
+// не один раз, а несколько — иначе на старте она навсегда застынет на предварительном
+// выводе, сделанном по одним настройкам.
+function bindHostName() {
+    const el = document.getElementById('imaginy_host_name');
+    if (!el) return;
+
+    const render = () => {
+        try {
+            el.textContent = getHost().name;
+        } catch (err) {
+            el.textContent = 'не определено';
+        }
+    };
+
+    render();
+    for (const delay of [2000, 6000, 15000]) setTimeout(render, delay);
 }

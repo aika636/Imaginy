@@ -7,12 +7,13 @@
 
 import { toast } from './ctx.js';
 import { logError, logInfo, logWarn } from './log.js';
-import { getAspectRatioContext, setAspectRatioFromPrompt, getStyleContext, clearSlayStyle } from './slay.js';
+import { getAspectRatioContext, setAspectRatioFromPrompt, getStyleContext, clearHostStyle } from './hostquirks.js';
+import { getHost } from './host.js';
 import { getSettings, saveSettings } from './settings.js';
 
 // Поля image_size / quality / preset намеренно не редактируются: у активного
-// naistera-пути SLAY их вообще не отправляет (upstream/index.js:3451 — в теле запроса
-// только prompt/aspect_ratio/model), а у остальных путей это глобальные настройки SLAY.
+// naistera-пути хост их вообще не отправляет (upstream/index.js:3451 — в теле запроса
+// только prompt/aspect_ratio/model), а у остальных путей это глобальные настройки хоста.
 // Ключи, если они были в инструкции, сохраняются как есть — см. buildResultData.
 const FIELDS = [
     { key: 'prompt', label: 'Промпт', kind: 'textarea', rows: 8, autofocus: true },
@@ -227,7 +228,9 @@ function buildModal({ data, kind, regen }, resolve) {
     // полей, вид кнопок) спокойно доедет из style.css, когда он есть.
     const header = document.createElement('div');
     header.className = 'imaginy-modal-header';
-    header.textContent = 'Редактирование промпта';
+    // Имя хоста в шапке — не украшение: по нему сразу видно, чьи кнопки и настройки
+    // Imaginy считает своими (детект хоста описан в src/host.js).
+    header.textContent = `Редактирование промпта — ${getHost().name}`;
     applyStyles(header, { flex: '0 0 auto', padding: '12px 16px', fontWeight: '600' });
     modal.appendChild(header);
 
@@ -245,6 +248,7 @@ function buildModal({ data, kind, regen }, resolve) {
     modal.appendChild(body);
 
     let copyBtn = null;
+    const host = getHost();
     const aspectCtx = getAspectRatioContext();
     const styleCtx = getStyleContext();
     // Настройки читаем один раз на открытие: нужен только запомненный стиль. Если
@@ -313,8 +317,9 @@ function buildModal({ data, kind, regen }, resolve) {
             input.rows = field.rows;
         } else if (field.kind === 'select') {
             input = document.createElement('select');
-            // Пустое значение = ключа в инструкции нет; SLAY тогда берёт '1:1'
-            // (upstream/index.js:3437).
+            // Пустое значение = ключа в инструкции нет; хост тогда берёт свою настройку
+            // либо '1:1' (у SLAY — upstream/index.js:3437, у форков — то же выражение
+            // options.aspectRatio || settings.aspectRatio || '1:1').
             const choices = ['', ...aspectCtx.choices];
             // Значение из инструкции может быть нестандартным (руками правленый JSON) —
             // не теряем его молча, добавляем в список.
@@ -322,7 +327,9 @@ function buildModal({ data, kind, regen }, resolve) {
             for (const value of choices) {
                 const opt = document.createElement('option');
                 opt.value = value;
-                opt.textContent = value === '' ? 'Не задано (SLAY возьмёт 1:1)' : value;
+                opt.textContent = value === ''
+                    ? `Не задано (значение возьмёт ${host.name})`
+                    : value;
                 input.appendChild(opt);
             }
         } else {
@@ -345,20 +352,21 @@ function buildModal({ data, kind, regen }, resolve) {
         inputs[field.key] = input;
         wrap.appendChild(input);
 
-        // Стиль из инструкции доходит до генерации только когда в пикере SLAY выбрано
-        // «Не заменять»: иначе settings.slayStyle перекрывает его целиком, до всех
-        // API-путей (upstream/index.js:3912, src/slay.js).
+        // Стиль из инструкции доходит до генерации только когда глобальный стиль хоста
+        // не выбран: иначе он перекрывает per-image значение целиком, до всех API-путей
+        // (у SLAY — upstream/index.js:3912, у форков sillyimages — resolveEffectiveStyle;
+        // см. src/hostquirks.js).
         if (field.key === 'style' && styleCtx.overridden) {
             wrap.appendChild(createHintRow(
-                `В SLAY выбран стиль «${styleCtx.name}» — он перекроет любой стиль, вписанный здесь.`,
+                `В ${host.name} выбран стиль «${styleCtx.name}» — он перекроет любой стиль, вписанный здесь.`,
                 {
-                    label: 'Сбросить стиль SLAY',
+                    label: 'Сбросить стиль хоста',
                     onClick: (row) => {
-                        if (clearSlayStyle()) {
+                        if (clearHostStyle()) {
                             row.remove();
-                            toast('success', 'Стиль SLAY сброшен на «Не заменять» — теперь применяется стиль из инструкции');
+                            toast('success', `Глобальный стиль ${host.name} сброшен — теперь применяется стиль из инструкции`);
                         } else {
-                            toast('error', 'Не удалось изменить настройку SLAY — сбросьте стиль вручную в панели SLAY Images');
+                            toast('error', `Не удалось изменить настройку ${host.name} — сбросьте стиль вручную в его панели`);
                         }
                     },
                 },
@@ -385,19 +393,21 @@ function buildModal({ data, kind, regen }, resolve) {
         }
 
         // Соотношение сторон из инструкции доходит до генерации только тогда, когда
-        // глобальная настройка SLAY стоит в «Из промпта» (auto) — иначе SLAY подставит
-        // своё значение и правка тихо ни на что не повлияет (src/slay.js).
+        // глобальная настройка хоста стоит в «Из промпта» (auto) — иначе хост подставит
+        // своё значение и правка тихо ни на что не повлияет. Квирк есть только у SLAY:
+        // у трёх форков per-image значение в приоритете, и предупреждения не будет
+        // (src/hostquirks.js).
         if (field.key === 'aspect_ratio' && aspectCtx.overridden) {
             wrap.appendChild(createHintRow(
-                `В настройках SLAY жёстко задано «${aspectCtx.global}» — это значение перекроет любое выбранное здесь.`,
+                `В настройках ${host.name} жёстко задано «${aspectCtx.global}» — это значение перекроет любое выбранное здесь.`,
                 {
-                    label: 'Переключить SLAY на «Из промпта»',
+                    label: 'Переключить на «Из промпта»',
                     onClick: (row) => {
                         if (setAspectRatioFromPrompt()) {
                             row.remove();
-                            toast('success', 'SLAY переключён на «Из промпта» — соотношение теперь берётся из инструкции');
+                            toast('success', `${host.name} переключён на «Из промпта» — соотношение теперь берётся из инструкции`);
                         } else {
-                            toast('error', 'Не удалось изменить настройку SLAY — переключите вручную в панели SLAY Images');
+                            toast('error', `Не удалось изменить настройку ${host.name} — переключите вручную в его панели`);
                         }
                     },
                 },

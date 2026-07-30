@@ -1,67 +1,48 @@
-// Программная перегенерация: клик по уже существующей кнопке SLAY .iig-regen-btn.
+// Программная перегенерация: клик по уже существующей кнопке активного хоста.
 // Imaginy не делает никаких сетевых вызовов сам — после клика всё остальное (оверлей,
-// таймер, ретраи, сохранение файла, replaceImageSrcEverywhere, saveChat) выполняет
-// SLAY. Imaginy не отменяет и не дублирует генерацию, и ошибки самой генерации
-// остаются зоной ответственности SLAY — Imaginy лишь решает, можно ли кликать.
+// таймер, ретраи, сохранение файла, подмена src в сообщении, saveChat) выполняет сам
+// хост. Imaginy не отменяет и не дублирует генерацию, и ошибки самой генерации
+// остаются зоной ответственности хоста — Imaginy лишь решает, можно ли кликать.
+//
+// Какая именно кнопка ищется и почему в каких-то случаях перегенерация невозможна —
+// решает профиль хоста (src/hosts/*.js, обзор в docs/hosts.md): у SLAY это
+// .iig-regen-btn в его обёртке, у delidgi — .iig-regen-single-btn, у
+// notsosillynotsoimages — .iig-action-regen, у 0xl0cal per-image кнопки нет вовсе и
+// используется кнопка сообщения (только когда картинка в сообщении одна).
 
 import { logError, logInfo } from './log.js';
-import { SELECTORS } from './decorate.js';
+import { getHost } from './host.js';
 
-const REASON_VIDEO = 'SLAY не добавляет кнопку перегенерации к видео — промпт можно только сохранить.';
+const REASON_UNKNOWN = 'Не удалось определить, можно ли перегенерировать. Промпт сохранён.';
 
-const REASON_ERROR =
-    'Кнопка «Попробовать снова» у неудавшейся генерации использует промпт, захваченный в замыкание SLAY, ' +
-    'и не увидит правку. Сохраните промпт и обновите сообщение (свайп или смена чата), после чего повторите генерацию.';
-
-const REASON_NO_BUTTON =
-    'Кнопка перегенерации SLAY не найдена — возможно, SLAY отключён. Промпт сохранён.';
-
-const REASON_BUSY = 'Генерация этого изображения уже идёт — дождитесь её завершения.';
-
-// canRegen(targetEl, kind) -> { ok, reason }. reason — русская фраза для пользователя
-// при ok === false, пустая строка при ok === true.
+// canRegen(targetEl, kind) -> { ok, reason, btn }. reason — русская фраза для
+// пользователя при ok === false, пустая строка при ok === true.
 export function canRegen(targetEl, kind) {
-    if (kind === 'video') {
-        return { ok: false, reason: REASON_VIDEO };
+    try {
+        return getHost().findRegen(targetEl, kind) ?? { ok: false, reason: REASON_UNKNOWN, btn: null };
+    } catch (err) {
+        logError('canRegen: профиль хоста упал', err);
+        return { ok: false, reason: REASON_UNKNOWN, btn: null };
     }
-    if (kind === 'error') {
-        // Стоп-фактор задокументирован в docs/sillytavern-api.md §2.2: .iig-error-retry
-        // держит промпт в замыкании SLAY и не перечитывает data-iig-instruction —
-        // поэтому Imaginy сознательно не кликает по ней.
-        return { ok: false, reason: REASON_ERROR };
-    }
-
-    const wrap = targetEl?.closest?.(SELECTORS.imageWrap);
-    const btn = wrap?.querySelector?.(SELECTORS.regenBtn);
-    if (!wrap || !btn) {
-        return { ok: false, reason: REASON_NO_BUTTON };
-    }
-
-    if (btn.classList.contains(SELECTORS.regenBusyClass)) {
-        return { ok: false, reason: REASON_BUSY };
-    }
-
-    return { ok: true, reason: '' };
 }
 
 // requestRegen(targetEl, kind) -> { ok, reason }. Перепроверяет canRegen (состояние
 // могло измениться, пока был открыт модал редактора — это и есть смысл повторной
-// проверки), и при ok кликает по найденной кнопке. Всё, что происходит после клика
-// (оверлей, таймер, ретраи, сохранение файла, replaceImageSrcEverywhere, saveChat) —
-// дело SLAY; Imaginy не отменяет и не дублирует генерацию, и в ошибки самой
-// генерации не вмешивается.
+// проверки), и при ok кликает по найденной кнопке. Всё, что происходит после клика, —
+// дело хоста.
 export function requestRegen(targetEl, kind) {
     // Никогда не бросает: к этому моменту промпт уже сохранён, и исключение отсюда
     // в вызывающем коде выглядело бы как «не удалось сохранить» — ложь.
     try {
         const check = canRegen(targetEl, kind);
-        if (!check.ok) return check;
+        if (!check.ok) return { ok: false, reason: check.reason };
+        if (!check.btn) return { ok: false, reason: REASON_UNKNOWN };
 
-        const wrap = targetEl.closest(SELECTORS.imageWrap);
-        const btn = wrap.querySelector(SELECTORS.regenBtn);
-
-        btn.click();
-        logInfo(`requestRegen: клик по ${SELECTORS.regenBtn} выполнен`);
+        // Кнопка может быть скрыта настройкой хоста (например imgActionRegen у delidgi
+        // вешает на <body> класс, который её прячет) — из DOM она при этом не исчезает,
+        // а обработчики у форков делегированные, так что click() всё равно работает.
+        check.btn.click();
+        logInfo(`requestRegen: клик по кнопке перегенерации выполнен (хост ${getHost().id})`);
 
         return { ok: true, reason: '' };
     } catch (err) {

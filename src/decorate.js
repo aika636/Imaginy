@@ -1,33 +1,38 @@
-// Поиск целей (картинка/видео/плашка ошибки от SLAY) и вставка кнопки-карандаша.
-// Единственное место, где живут CSS-селекторы SLAY — переименование класса в апстриме
-// чинится правкой одного объекта ниже (см. docs/plan-fork.md, раздел «Риски»).
+// Поиск целей (картинка/видео/плашка ошибки) и вставка кнопки-карандаша.
+//
+// Конкретные CSS-селекторы живут не здесь, а в профиле активного хоста
+// (src/hosts/*.js, выбор — src/host.js): у SLAY Images и у трёх форков семейства
+// «inline image generation» одинаковый атрибут data-iig-instruction, но разные обёртки
+// и кнопки. Этот модуль знает только общие правила декорации, см. docs/hosts.md.
 
 import { getCtx, getEventTypes, toast } from './ctx.js';
 import { logError, logWarn, warnOnce } from './log.js';
 import { getSettings } from './settings.js';
-
-export const SELECTORS = {
-    // Обычная сгенерированная картинка. SLAY оборачивает её в span.iig-img-wrap лениво
-    // (docs/sillytavern-api.md §2.1) — если обёртки ещё нет, ждём следующей мутации.
-    image: 'img[data-iig-instruction]',
-    imageWrap: '.iig-img-wrap',
-    // Ошибочные картинки, которые SLAY подставляет сам при сбое отрисовки — не цель.
-    errorImage: '.iig-error-image',
-    errorPlaceholderAncestor: '.iig-error-placeholder',
-    // SLAY никогда не оборачивает видео (hard return на не-IMG, §2.1 п.2) — Imaginy
-    // создаёт для него собственную обёртку.
-    video: 'video[data-iig-instruction]',
-    // Плашка неудавшейся генерации: div, не обёрнута, position можно ставить сразу.
-    errorPlaceholder: '.iig-error-placeholder[data-iig-instruction]',
-    // Кнопка перегенерации SLAY — лежит внутри того же .iig-img-wrap (src/regen.js).
-    regenBtn: '.iig-regen-btn',
-    // Класс занятости висит на кнопке, не на обёртке (docs/sillytavern-api.md §2.6).
-    regenBusyClass: 'iig-regen-busy',
-};
+import { getHost, isHostPresent } from './host.js';
 
 const OWN_WRAP_CLASS = 'imaginy-img-wrap';
 const BTN_CLASS = 'imaginy-edit-btn';
 const BTN_CLASS_ERROR = 'imaginy-edit-btn--error';
+// Карандаш встаёт либо правее кнопки перегенерации хоста (SLAY держит свою в левом
+// верхнем углу), либо в левый верхний угол (форки держат свои кнопки справа).
+const BTN_CLASS_TOP_LEFT = 'imaginy-edit-btn--tl';
+
+// Сколько ждать, пока хост сам обернёт картинку, прежде чем сделать свою обёртку.
+// Нужно только профилям с ownWrapFallback и непустым imageWrap: у них обёртка обычно
+// приезжает через мутацию, но на некоторых путях отрисовки (упавшая генерация, чужой
+// рендер) не приезжает никогда — без своей обёртки карандаша там не будет совсем.
+const OWN_WRAP_DELAY_MS = 1200;
+
+function selectors() {
+    return getHost().selectors;
+}
+
+// Элемент сам может быть контейнером для кнопки (div-плашка SLAY), а может не иметь
+// права содержать потомков (img/video) — тогда нужна обёртка.
+function canHostChildren(el) {
+    const tag = el?.tagName;
+    return tag !== 'IMG' && tag !== 'VIDEO';
+}
 
 // Фаза 5, п.5.4 («SLAY сменил формат data-iig-instruction»): намеренно не парсим
 // инструкцию здесь ради самого предупреждения — это дублировало бы работу и
@@ -40,28 +45,14 @@ let observer = null;
 let scanTimer = null;
 let pendingScanRoots = new Set();
 
-// SLAY детектируется по своим DOM-следам либо по единственному глобалу
-// window.slayWardrobe (upstream/index.js:2157). Намеренно НЕ дизейблит декорацию
-// насовсем при отсутствии — чат без картинок неотличим от отсутствия SLAY, поэтому
-// правило: один раз предупредить и продолжать сканировать (селекторы просто ничего
-// не найдут).
-export function isSlayPresent() {
-    try {
-        return !!(
-            document.querySelector('[data-iig-instruction]') ||
-            document.querySelector(SELECTORS.imageWrap) ||
-            window.slayWardrobe !== undefined
-        );
-    } catch (err) {
-        logError('isSlayPresent: ошибка проверки', err);
-        return false;
-    }
-}
-
-function makeButton(kind) {
+function makeButton(kind, { errorMod = false } = {}) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = BTN_CLASS + (kind === 'error' ? ` ${BTN_CLASS_ERROR}` : '');
+    btn.className = [
+        BTN_CLASS,
+        errorMod ? BTN_CLASS_ERROR : '',
+        getHost().btnPlacement === 'top-left' ? BTN_CLASS_TOP_LEFT : '',
+    ].filter(Boolean).join(' ');
     btn.title = 'Редактировать промпт';
     btn.innerHTML = '<i class="fa-solid fa-pen"></i>';
     btn.addEventListener('click', (e) => {
@@ -94,74 +85,138 @@ function containerAlreadyHasButton(container) {
     return !!container.querySelector(`.${BTN_CLASS}`);
 }
 
-function decorateImage(img) {
-    if (img.dataset.imaginyBound === '1') return;
-    if (img.classList.contains(SELECTORS.errorImage.slice(1))) return;
-    if (img.closest(SELECTORS.errorPlaceholderAncestor)) return;
+// Наша собственная обёртка вокруг элемента, который не может содержать кнопку сам
+// (img/video) и которого не обернул хост. Возвращает обёртку или null.
+function ownWrap(el) {
+    const existing = el.closest(`.${OWN_WRAP_CLASS}`);
+    if (existing) return existing;
 
-    const wrap = img.closest(SELECTORS.imageWrap);
-    if (!wrap) return; // SLAY ещё не успел обернуть — придёт следующая мутация.
+    const parent = el.parentElement;
+    if (!parent) return null;
 
-    if (containerAlreadyHasButton(wrap)) {
-        img.dataset.imaginyBound = '1';
-        return;
-    }
-
-    const btn = makeButton('image');
-    btn.__imaginyTarget = img;
-    wrap.appendChild(btn);
-    img.dataset.imaginyBound = '1';
+    const wrap = document.createElement('span');
+    wrap.className = OWN_WRAP_CLASS;
+    parent.insertBefore(wrap, el);
+    wrap.appendChild(el);
+    el.dataset.imaginyOwnsWrap = '1';
+    return wrap;
 }
 
-function decorateVideo(video) {
-    if (video.dataset.imaginyBound === '1') return;
+// Контейнер, в который ляжет кнопка для этой цели, или null — «пока нельзя, ждём».
+//
+// Правила (одинаковые для всех хостов, различия приходят из профиля):
+//   * элемент, который может содержать потомков (плашка-div у SLAY) — сам себе контейнер;
+//   * обёртка хоста, если профиль её объявил и она уже есть;
+//   * своя обёртка — сразу, если хост не оборачивает вовсе (imageWrap === null),
+//     или с задержкой, если хост обычно оборачивает, но здесь почему-то не обернул.
+//
+// hostWraps === false — про видео: его не оборачивает ни один из хостов (у SLAY это
+// hard return на не-IMG, docs/sillytavern-api.md §2.1 п.2; форки делают то же), поэтому
+// обёртка сразу своя, без ожидания.
+function resolveContainer(el, { hostWraps = true } = {}) {
+    if (canHostChildren(el)) return el;
 
-    // Если видео уже внутри нашей же обёртки (повторный проход) — не дублируем.
-    let wrap = video.closest(`.${OWN_WRAP_CLASS}`);
-    if (!wrap) {
-        const parent = video.parentElement;
-        if (!parent) return;
-        wrap = document.createElement('span');
-        wrap.className = OWN_WRAP_CLASS;
-        parent.insertBefore(wrap, video);
-        wrap.appendChild(video);
-        video.dataset.imaginyOwnsWrap = '1';
+    const { imageWrap } = selectors();
+    const host = getHost();
+
+    if (imageWrap && hostWraps) {
+        const hostWrap = el.closest(imageWrap);
+        if (hostWrap) return hostWrap;
+
+        if (!host.ownWrapFallback) return null; // обёртка хоста ещё придёт (SLAY)
+
+        // Даём хосту время обернуть сам: своя обёртка внутри его разметки безвредна,
+        // но лишний узел в DOM без нужды создавать не хочется.
+        const seenAt = Number.parseInt(el.dataset.imaginySeen ?? '', 10);
+        const now = Date.now();
+        if (!Number.isInteger(seenAt)) {
+            el.dataset.imaginySeen = String(now);
+            // Один отложенный повтор: мутаций может больше не быть, и без него
+            // карандаш не появился бы никогда.
+            setTimeout(() => {
+                try {
+                    if (el.isConnected) decorateRoot(el);
+                } catch (err) {
+                    logError('resolveContainer: отложенный обход упал', err);
+                }
+            }, OWN_WRAP_DELAY_MS + 50);
+            return null;
+        }
+        if (now - seenAt < OWN_WRAP_DELAY_MS) return null;
     }
 
-    if (containerAlreadyHasButton(wrap)) {
-        video.dataset.imaginyBound = '1';
-        return;
-    }
-
-    const btn = makeButton('video');
-    btn.__imaginyTarget = video;
-    wrap.appendChild(btn);
-    video.dataset.imaginyBound = '1';
+    return ownWrap(el);
 }
 
-function decorateErrorPlaceholder(el) {
+function decorateTarget(el, kind) {
     if (el.dataset.imaginyBound === '1') return;
 
-    if (containerAlreadyHasButton(el)) {
+    const container = resolveContainer(el, { hostWraps: kind !== 'video' });
+    if (!container) return;
+    // Общий класс для CSS (style.css): избавляет hover-правило от перечисления
+    // селекторов обёрток каждого хоста поимённо.
+    container.classList.add('imaginy-host-wrap');
+
+    // Кнопка могла остаться от прошлого прохода не в самом контейнере, а в нашей же
+    // обёртке снаружи него: хост мог пересоздать картинку и обернуть её своей обёрткой
+    // уже внутри нашей. Второй карандаш на одну картинку — хуже, чем чуть менее удобно
+    // расположенный первый.
+    const outerWrap = container.closest(`.${OWN_WRAP_CLASS}`);
+    if (containerAlreadyHasButton(container) || (outerWrap && containerAlreadyHasButton(outerWrap))) {
+        // Хост пересоздал картинку внутри уже забинденной обёртки: кнопка осталась
+        // от старой img, а её __imaginyTarget указывает на отсоединённый узел. Если
+        // так, перенаводим ссылку на новую картинку, иначе следующий клик по карандашу
+        // прочитает протухшую инструкцию и persist.js не найдёт .mes для сохранения.
+        const btn = container.querySelector(`.${BTN_CLASS}`) ?? outerWrap?.querySelector(`.${BTN_CLASS}`);
+        if (btn && (!btn.__imaginyTarget || !btn.__imaginyTarget.isConnected)) {
+            btn.__imaginyTarget = el;
+        }
         el.dataset.imaginyBound = '1';
         return;
     }
 
-    const btn = makeButton('error');
+    // У неудавшейся генерации карандаш видно всегда: наводить курсор на плашку или на
+    // картинку-заглушку, чтобы обнаружить кнопку, никто не догадается.
+    const isError = kind === 'error';
+
+    const btn = makeButton(kind, { errorMod: isError });
     btn.__imaginyTarget = el;
-    el.appendChild(btn);
+    container.appendChild(btn);
     el.dataset.imaginyBound = '1';
 
-    // :has() фолбэк для браузеров без поддержки (iOS Safari < 15.4, см.
-    // upstream-комментарий у SLAY ~3738). CSS-правило `.iig-error-placeholder:has(.imaginy-edit-btn)`
-    // уже покрывает современные браузеры; здесь просто подстраховка.
-    try {
-        if (getComputedStyle(el).position === 'static') {
-            el.style.position = 'relative';
+    // Плашка-div (SLAY) сама себе контейнер, и position ей может быть не задан.
+    if (isError && container === el) {
+        // :has() фолбэк для браузеров без поддержки (iOS Safari < 15.4, см.
+        // upstream-комментарий у SLAY ~3738). CSS-правило
+        // `.iig-error-placeholder:has(.imaginy-edit-btn)` уже покрывает современные
+        // браузеры; здесь просто подстраховка.
+        try {
+            if (getComputedStyle(container).position === 'static') {
+                container.style.position = 'relative';
+            }
+        } catch (err) {
+            logWarn('decorateTarget: getComputedStyle упал', err);
         }
-    } catch (err) {
-        logWarn('decorateErrorPlaceholder: getComputedStyle упал', err);
     }
+}
+
+function decorateImage(img) {
+    const { imageSkipMatch, imageSkipAncestor } = selectors();
+    for (const selector of imageSkipMatch) {
+        if (img.matches?.(selector)) return;
+    }
+    for (const selector of imageSkipAncestor) {
+        if (img.closest(selector)) return;
+    }
+    decorateTarget(img, 'image');
+}
+
+function decorateVideo(video) {
+    decorateTarget(video, 'video');
+}
+
+function decorateErrorTarget(el) {
+    decorateTarget(el, 'error');
 }
 
 // Обходит root и все подходящие потомки, включая сам root (MutationObserver отдаёт
@@ -181,11 +236,13 @@ export function decorateRoot(root) {
         }
     };
 
+    const sel = selectors();
+
     // root сам может быть целью.
     if (root instanceof Element) {
-        tryMatch(root, SELECTORS.errorPlaceholder, decorateErrorPlaceholder);
-        tryMatch(root, SELECTORS.image, decorateImage);
-        tryMatch(root, SELECTORS.video, decorateVideo);
+        if (sel.errorTarget) tryMatch(root, sel.errorTarget, decorateErrorTarget);
+        tryMatch(root, sel.image, decorateImage);
+        tryMatch(root, sel.video, decorateVideo);
     }
 
     const query = (selector) => {
@@ -197,11 +254,15 @@ export function decorateRoot(root) {
         }
     };
 
-    // Плашки ошибок сначала — они пересекаются по data-атрибуту с img-селектором быть
-    // не могут (разные теги), порядок здесь не критичен, но так нагляднее.
-    for (const el of query(SELECTORS.errorPlaceholder)) candidates.push([el, decorateErrorPlaceholder]);
-    for (const el of query(SELECTORS.image)) candidates.push([el, decorateImage]);
-    for (const el of query(SELECTORS.video)) candidates.push([el, decorateVideo]);
+    // Цели-ошибки сначала: у форков ошибочная картинка — это img с инструкцией, то есть
+    // она попадает и под общий img-селектор. Порядок гарантирует, что она будет
+    // размечена как kind 'error' (у decorateImage она отсекается через imageSkipMatch),
+    // а не как обычная картинка.
+    if (sel.errorTarget) {
+        for (const el of query(sel.errorTarget)) candidates.push([el, decorateErrorTarget]);
+    }
+    for (const el of query(sel.image)) candidates.push([el, decorateImage]);
+    for (const el of query(sel.video)) candidates.push([el, decorateVideo]);
 
     for (const [el, fn] of candidates) {
         try {
@@ -325,13 +386,15 @@ export function initDecoration({ onEdit }) {
     // никогда не сработает. Первый обход делаем безусловно.
     scheduleScan(chatRoot, 1000);
 
-    // Проверку наличия SLAY делаем не на старте (в этот момент DOM всегда пуст, и
+    // Проверку наличия хоста делаем не на старте (в этот момент DOM всегда пуст, и
     // предупреждение было бы ложным), а после первого обхода.
     setTimeout(() => {
-        if (!isSlayPresent()) {
+        if (!isHostPresent()) {
             warnOnce(
-                'slay-not-detected',
-                'SLAY Images не обнаружен на странице. Imaginy продолжит работать, но кнопка-карандаш появится только там, где SLAY отрисует изображение (либо в этом чате просто нет сгенерированных картинок).',
+                'host-not-detected',
+                'Расширение генерации картинок (SLAY Images или один из форков inline image generation) не обнаружено на странице. '
+                + 'Imaginy продолжит работать, но кнопка-карандаш появится только там, где такое расширение отрисует изображение '
+                + '(либо в этом чате просто нет сгенерированных картинок).',
             );
         }
     }, 1500);

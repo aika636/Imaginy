@@ -9,7 +9,7 @@ import { openEditor } from './src/editor.js';
 import { persistInstruction } from './src/persist.js';
 import { canRegen, requestRegen } from './src/regen.js';
 
-const VERSION = '0.2.1';
+const VERSION = '0.3.0';
 
 const BUSY_BTN_CLASS = 'imaginy-busy';
 const SPIN_ICON_CLASS = 'fa-solid fa-spinner imaginy-spin';
@@ -61,10 +61,12 @@ async function onEdit(targetEl, kind, btn) {
         logInfo(`onEdit: persist завершён (ok=${ok}, method=${method}, savedToDisk=${savedToDisk})`);
 
         // Регенерацию запускаем только если промпт реально лёг в текст сообщения
-        // (ok === true). При ok === false правка живёт только в DOM: клик по
-        // .iig-regen-btn формально сработал бы (он читает DOM), но результат
+        // (ok === true). При ok === false правка живёт только в DOM: клик по кнопке
+        // хоста формально сработал бы (часть хостов читает промпт из DOM), но результат
         // прикрепился бы к сообщению, чей текст всё ещё хранит старый промпт —
-        // молчаливое рассогласование хуже отказа, поэтому отказываем сами.
+        // молчаливое рассогласование хуже отказа, поэтому отказываем сами. У хостов,
+        // читающих промпт из текста сообщения (delidgi, 0xl0cal), при ok === false
+        // перегенерация вообще взяла бы старый промпт.
         const wantsRegen = ok && (result.action === 'saveAndRegen' || (result.action === 'save' && getSettings().regenerateAfterSave));
         if (wantsRegen) {
             const regenResult = requestRegen(targetEl, kind);

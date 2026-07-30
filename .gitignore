@@ -3,9 +3,21 @@
 # Какая именно версия имелась в виду — см. UPSTREAM.md.
 upstream/
 
+# Единственная зависимость разработки — jsdom для смоук-теста host-профилей
+# (tests/hosts.test.mjs, docs/development.md). Ставится через `npm i --no-save jsdom`,
+# в браузер не попадает и в историю не тащится: расширение остаётся без сборки.
+node_modules/
+package-lock.json
+
 # Мусор ОС и редакторов
 .DS_Store
 Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# Локальное состояние ai-code-loop и коннекторов — не часть расширения
+.ai/
+.claude/
+.mcp.json
+.serena/
