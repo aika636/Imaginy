@@ -6,18 +6,17 @@
 // в JSON, но на картинку не влияет — выглядит это как «не применяется». Редактор
 // показывает предупреждение ровно в тех случаях, когда перекрытие реально есть.
 //
-// Что и как перекрывается — зависит от хоста (profile.quirks, docs/hosts.md):
+// Что и как перекрывается — зависит от хоста (profile.quirks):
 //
 //   aspectAuto (только SLAY): per-image aspect_ratio учитывается ТОЛЬКО когда
-//   глобальная настройка соотношения стоит в 'auto' («Из промпта»):
-//     upstream/index.js:3260  settings.aspectRatio         === 'auto' ? options.aspectRatio : settings.aspectRatio
-//     upstream/index.js:3377  (то же для Gemini)
-//     upstream/index.js:3437  settings.naisteraAspectRatio === 'auto' ? options.aspectRatio : settings.naisteraAspectRatio
+//   глобальная настройка соотношения стоит в 'auto' («Из промпта») — на всех API-путях
+//   SLAY выражение вида
+//     settings.aspectRatio === 'auto' ? options.aspectRatio : settings.aspectRatio
 //   У всех трёх форков приоритет обратный (options.aspectRatio || settings.aspectRatio),
 //   поэтому предупреждать там не о чем.
 //
 //   styleOverride='slay': выбранный в пикере SLAY стиль перекрывает per-image style
-//   целиком, до всех API-путей (upstream/index.js:3912).
+//   целиком, до всех API-путей.
 //   styleOverride='preset' (0xl0cal, delidgi): то же делает активный пресет стиля
 //   (resolveEffectiveStyle: `preset || tagStyle`).
 //   styleOverride=null (notsosillynotsoimages): глобального стиля нет.
@@ -30,9 +29,8 @@ import { getHost } from './host.js';
 import { ASPECT_RATIOS } from './hosts/common.js';
 
 // У naistera-пути свой короткий список в выпадашке хоста, но сам путь кладёт
-// aspect_ratio в тело запроса как есть, без сверки с VALID_ASPECT_RATIOS (SLAY:
-// upstream/index.js:3437 и :3451 — проверка есть только у Gemini, :3378; в форках так
-// же). Поэтому широкоформатные 16:9 / 9:16 здесь сознательно оставлены; примет ли их
+// aspect_ratio в тело запроса как есть, без сверки с VALID_ASPECT_RATIOS (у SLAY такая
+// проверка есть только на Gemini-пути; в форках так же). Поэтому широкоформатные 16:9 / 9:16 здесь сознательно оставлены; примет ли их
 // конкретный бэкенд naistera — вопрос к нему.
 const ASPECT_RATIOS_NAISTERA = ['16:9', '9:16', '2:3', '3:2', '1:1'];
 
@@ -89,7 +87,7 @@ export function getStyleContext() {
         return {
             available: true,
             style,
-            // У SLAY пустое имя означает «Не заменять» (upstream/index.js:4767).
+            // У SLAY пустое имя означает «Не заменять».
             name: name || style,
             overridden: style.trim().length > 0,
         };

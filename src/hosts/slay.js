@@ -18,7 +18,7 @@ export const SLAY = Object.freeze({
     name: 'SLAY Images',
     settingsModule: 'slay_image_gen',
 
-    // window.slayWardrobe — единственный глобал SLAY (upstream/index.js:2157).
+    // window.slayWardrobe — единственный глобал SLAY.
     detect: Object.freeze({
         globals: ['slayWardrobe'],
         dom: ['.iig-img-wrap', '.iig-regen-btn', '.iig-error-placeholder'],
@@ -28,8 +28,8 @@ export const SLAY = Object.freeze({
     selectors: Object.freeze({
         image: SEL_IMAGE,
         video: SEL_VIDEO,
-        // SLAY оборачивает картинку в span.iig-img-wrap лениво (docs/sillytavern-api.md
-        // §2.1) — если обёртки ещё нет, ждём следующей мутации, свою не делаем.
+        // SLAY оборачивает картинку в span.iig-img-wrap лениво — если обёртки ещё нет,
+        // ждём следующей мутации, свою не делаем.
         imageWrap: '.iig-img-wrap',
         // Плашка неудавшейся генерации: div, сам себе контейнер для кнопки.
         errorTarget: `.iig-error-placeholder[${ATTR}]`,
@@ -52,21 +52,21 @@ export const SLAY = Object.freeze({
 
     quirks: Object.freeze({
         // per-image aspect_ratio SLAY использует только при глобальном 'auto'
-        // (upstream/index.js:3260, :3377, :3437) — см. src/hostquirks.js.
+        // — см. src/hostquirks.js.
         aspectAuto: true,
         styleOverride: 'slay',
     }),
 
     findRegen(targetEl, kind) {
         if (kind === 'video') return no(REASONS.video);
-        // Стоп-фактор задокументирован в docs/sillytavern-api.md §2.2: .iig-error-retry
-        // держит промпт в замыкании SLAY и не перечитывает data-iig-instruction.
+        // Стоп-фактор: .iig-error-retry держит промпт в замыкании SLAY и не
+        // перечитывает data-iig-instruction.
         if (kind === 'error') return no(REASONS.error);
 
         return regenViaWrapButton(targetEl, {
             wrapSelector: '.iig-img-wrap',
             btnSelector: '.iig-regen-btn',
-            // Класс занятости висит на кнопке, не на обёртке (docs/sillytavern-api.md §2.6).
+            // Класс занятости висит на кнопке, не на обёртке.
             busyClass: 'iig-regen-busy',
             reasons: REASONS,
         });

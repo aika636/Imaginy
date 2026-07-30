@@ -14,7 +14,7 @@
 //   3. Ничего не совпало — GENERIC: правка промпта работает, перегенерация ищется
 //      перебором известных кнопок (src/hosts/generic.js).
 //
-// Профили и то, чем именно хосты различаются: docs/hosts.md.
+// Профили и то, чем именно хосты различаются, — в src/hosts/.
 
 import { getCtx } from './ctx.js';
 import { logInfo, logWarn, warnOnce } from './log.js';
@@ -47,7 +47,7 @@ const KEY_USERS = PROFILES.reduce((acc, p) => {
 }, {});
 
 // Все DOM- и глобальные улики всех профилей, собранные в одном месте: isHostPresent()
-// не должен дублировать литералы селекторов — они живут только в профилях (CLAUDE.md).
+// не должен дублировать литералы селекторов — они живут только в профилях.
 const ALL_DOM_CLUES = PROFILES.flatMap((p) => p.detect.dom).join(', ');
 const ALL_GLOBAL_CLUES = Object.freeze([...new Set(PROFILES.flatMap((p) => p.detect.globals))]);
 
@@ -152,9 +152,8 @@ export function getHost() {
     return current;
 }
 
-// Сбрасывает кэш детекта: следующий getHost() решает заново. Нужно для смоук-тестов
-// (docs/development.md) и для ручной диагностики из консоли, когда хост поменяли, не
-// перезагружая страницу.
+// Сбрасывает кэш детекта: следующий getHost() решает заново. Нужно для смоук-тестов и
+// для ручной диагностики из консоли, когда хост поменяли, не перезагружая страницу.
 export function resetHostDetection() {
     current = null;
     checkedAt = 0;

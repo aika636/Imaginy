@@ -1,5 +1,5 @@
-// Настройки Imaginy: extensionSettings.Imaginy (camelCase-поле контекста, см.
-// docs/sillytavern-api.md §1), с мержем недостающих ключей при апгрейде.
+// Настройки Imaginy: extensionSettings.Imaginy (camelCase-поле контекста ST),
+// с мержем недостающих ключей при апгрейде.
 
 import { getCtx } from './ctx.js';
 import { logError, logInfo } from './log.js';

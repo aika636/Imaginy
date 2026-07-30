@@ -5,10 +5,9 @@ import { getCtx } from './ctx.js';
 import { logInfo, logWarn } from './log.js';
 import { escapeForText, serializeForDom, serializeForText } from './instruction.js';
 
-// Обходит все места, где SLAY хранит текст сообщения — «пять мест» в терминах апстрима,
-// шесть отдельных полей, если считать display_text и extblocks в swipe_info раздельно
-// (docs/data-model.md). Дословный порт replaceImageSrcEverywhere (upstream/index.js
-// ~3542-3574, задокументировано в docs/sillytavern-api.md §2.4); применяет
+// Обходит все места, где хост хранит текст сообщения — «пять мест» в его терминах,
+// шесть отдельных полей, если считать display_text и extblocks в swipe_info раздельно.
+// Дословный порт replaceImageSrcEverywhere из хоста; применяет
 // transform(str) -> str к каждому полю.
 // Возвращает true, если хотя бы одно место реально изменилось (transform вернул
 // другую строку).
@@ -59,8 +58,8 @@ function replaceAll(str, search, replacement) {
     return str.split(search).join(replacement);
 }
 
-// Порт брейс-каунтинг алгоритма извлечения JSON (upstream/index.js ~4161-4169,
-// api doc §2.5), дословно. text[jsonStart] должен быть '{'.
+// Дословный порт брейс-каунтинг алгоритма извлечения JSON из хоста.
+// text[jsonStart] должен быть '{'.
 export function extractJsonSpan(text, jsonStart) {
     let braceCount = 0;
     let jsonEnd = -1;
@@ -158,7 +157,7 @@ function anchoredReplace(str, src, textAfter) {
 
         // Продолжаем поиск ЗА концом только что переписанного тега, а не за концом
         // вставленного JSON. Канонический порядок атрибутов у SLAY —
-        // `<img data-iig-instruction='{...}' src="...">` (upstream/prompt.md:26), то есть
+        // `<img data-iig-instruction='{...}' src="...">`, то есть
         // JSON стоит ПЕРЕД src. Прежняя точка (`jsonStart + textAfter.length`) оказывалась
         // левее найденного src, следующая итерация находила тот же src, переписывала тот
         // же атрибут тем же значением — и так вечно: главный поток вставал намертво, и
@@ -173,7 +172,7 @@ function anchoredReplace(str, src, textAfter) {
 
 // ST энтити-кодирует не-ASCII в тексте сообщения десятичными энтити: кириллический
 // промпт лежит в чате как "&#1040;&#1085;...", а getAttribute отдаёт его уже
-// раскодированным (docs/sillytavern-api.md §2.3). Без этой формы поиска ни одна из
+// раскодированным. Без этой формы поиска ни одна из
 // точных стратегий не совпадала на русском промпте, и запись всегда сваливалась в
 // anchored.
 function encodeNonAscii(str) {

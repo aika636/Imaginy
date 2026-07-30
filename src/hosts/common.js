@@ -5,7 +5,7 @@
 // data-iig-instruction с одними и теми же ключами (prompt / style / aspect_ratio) и
 // пользуются одним и тем же CSS-префиксом iig-. Различаются только обёртка вокруг
 // картинки, кнопка перегенерации и мелкие особенности настроек — ровно то, что
-// описывают профили в этой папке (см. docs/hosts.md).
+// описывают профили в этой папке.
 
 import { logWarn } from '../log.js';
 
@@ -14,8 +14,7 @@ export const ATTR = 'data-iig-instruction';
 export const SEL_IMAGE = `img[${ATTR}]`;
 export const SEL_VIDEO = `video[${ATTR}]`;
 
-// VALID_ASPECT_RATIOS — один и тот же список во всех четырёх расширениях
-// (upstream/index.js:3216 у SLAY, VALID_ASPECT_RATIOS у трёх форков).
+// VALID_ASPECT_RATIOS — один и тот же список во всех четырёх расширениях.
 export const ASPECT_RATIOS = Object.freeze([
     '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9',
 ]);

@@ -1,9 +1,8 @@
-// Собственный модальный редактор промпта. Осознанное отклонение от плана
-// (plan-fork.md §3.2 предполагал ctx.callGenericPopup): нам нужны три разных
-// действия (Сохранить / Сохранить и перегенерировать / Отмена), а состав
-// ctx.POPUP_TYPE для кастомных кнопок [НЕ ПРОВЕРЕНО] на этой инсталляции
-// (docs/sillytavern-api.md §1). Собственный оверлей .imaginy-modal не зависит ни
-// от одной непроверенной части хоста и даёт полный контроль над рядом кнопок.
+// Собственный модальный редактор промпта — вместо ctx.callGenericPopup: нам нужны три
+// разных действия (Сохранить / Сохранить и перегенерировать / Отмена), а состав
+// ctx.POPUP_TYPE для кастомных кнопок от версии ST к версии не гарантирован.
+// Собственный оверлей .imaginy-modal не зависит ни от одной непроверенной части хоста
+// и даёт полный контроль над рядом кнопок.
 
 import { toast } from './ctx.js';
 import { logError, logInfo, logWarn } from './log.js';
@@ -12,8 +11,8 @@ import { getHost } from './host.js';
 import { getSettings, saveSettings } from './settings.js';
 
 // Поля image_size / quality / preset намеренно не редактируются: у активного
-// naistera-пути хост их вообще не отправляет (upstream/index.js:3451 — в теле запроса
-// только prompt/aspect_ratio/model), а у остальных путей это глобальные настройки хоста.
+// naistera-пути хост их вообще не отправляет (в теле запроса только
+// prompt/aspect_ratio/model), а у остальных путей это глобальные настройки хоста.
 // Ключи, если они были в инструкции, сохраняются как есть — см. buildResultData.
 const FIELDS = [
     { key: 'prompt', label: 'Промпт', kind: 'textarea', rows: 8, autofocus: true },
@@ -318,7 +317,7 @@ function buildModal({ data, kind, regen }, resolve) {
         } else if (field.kind === 'select') {
             input = document.createElement('select');
             // Пустое значение = ключа в инструкции нет; хост тогда берёт свою настройку
-            // либо '1:1' (у SLAY — upstream/index.js:3437, у форков — то же выражение
+            // либо '1:1' (во всех четырёх хостах это одно и то же выражение
             // options.aspectRatio || settings.aspectRatio || '1:1').
             const choices = ['', ...aspectCtx.choices];
             // Значение из инструкции может быть нестандартным (руками правленый JSON) —
@@ -354,8 +353,7 @@ function buildModal({ data, kind, regen }, resolve) {
 
         // Стиль из инструкции доходит до генерации только когда глобальный стиль хоста
         // не выбран: иначе он перекрывает per-image значение целиком, до всех API-путей
-        // (у SLAY — upstream/index.js:3912, у форков sillyimages — resolveEffectiveStyle;
-        // см. src/hostquirks.js).
+        // (у форков sillyimages это resolveEffectiveStyle; см. src/hostquirks.js).
         if (field.key === 'style' && styleCtx.overridden) {
             wrap.appendChild(createHintRow(
                 `В ${host.name} выбран стиль «${styleCtx.name}» — он перекроет любой стиль, вписанный здесь.`,
@@ -500,9 +498,8 @@ function buildModal({ data, kind, regen }, resolve) {
                 result[field.key] = trimmed;
             } else if (Object.hasOwn(result, field.key)) {
                 // Пусто и ключ был в исходной инструкции — удаляем, а не пишем "":
-                // для SLAY отсутствие ключа и пустая строка не одно и то же
-                // (plan-fork.md §3.2 — "пустые не пишем в JSON, чтобы не менять
-                // поведение SLAY").
+                // для хоста отсутствие ключа и пустая строка не одно и то же, поэтому
+                // пустые значения в JSON не пишем.
                 delete result[field.key];
             }
             // Пусто и ключа не было — ничего не делаем, ключ остаётся отсутствующим.

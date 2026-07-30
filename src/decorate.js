@@ -3,7 +3,7 @@
 // Конкретные CSS-селекторы живут не здесь, а в профиле активного хоста
 // (src/hosts/*.js, выбор — src/host.js): у SLAY Images и у трёх форков семейства
 // «inline image generation» одинаковый атрибут data-iig-instruction, но разные обёртки
-// и кнопки. Этот модуль знает только общие правила декорации, см. docs/hosts.md.
+// и кнопки. Этот модуль знает только общие правила декорации.
 
 import { getCtx, getEventTypes, toast } from './ctx.js';
 import { logError, logWarn, warnOnce } from './log.js';
@@ -34,7 +34,7 @@ function canHostChildren(el) {
     return tag !== 'IMG' && tag !== 'VIDEO';
 }
 
-// Фаза 5, п.5.4 («SLAY сменил формат data-iig-instruction»): намеренно не парсим
+// Про случай «хост сменил формат data-iig-instruction»: намеренно не парсим
 // инструкцию здесь ради самого предупреждения — это дублировало бы работу и
 // добавило бы JSON.parse на каждый скан. instruction.js:readInstruction уже вызывает
 // warnOnce('instruction-parse-failed', ...) при первом же провале парсинга (он
@@ -131,8 +131,7 @@ function ownWrap(el) {
 //     или с задержкой, если хост обычно оборачивает, но здесь почему-то не обернул.
 //
 // hostWraps === false — про видео: его не оборачивает ни один из хостов (у SLAY это
-// hard return на не-IMG, docs/sillytavern-api.md §2.1 п.2; форки делают то же), поэтому
-// обёртка сразу своя, без ожидания.
+// hard return на не-IMG, форки делают то же), поэтому обёртка сразу своя, без ожидания.
 function resolveContainer(el, { hostWraps = true } = {}) {
     if (canHostChildren(el)) return el;
 
