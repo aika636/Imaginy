@@ -103,12 +103,15 @@ const ANCHORED_MAX_PASSES = 500;
 // Стратегия "anchored": находит тег по src, внутри тега — атрибут
 // data-iig-instruction, вырезает его JSON-значение брейс-каунтингом и заменяет на
 // textAfter. Повторяет для каждого вхождения src в строке. Возвращает новую строку
-// (или ту же, если ничего не поменялось).
+// Возвращает { result, hits } — hits считает найденные и переписанные атрибуты,
+// в том числе когда новое значение совпало со старым (повторное сохранение без
+// правок): «нашли» и «изменили» — разные вещи, см. persistInstruction.
 function anchoredReplace(str, src, textAfter) {
-    if (!src) return str;
+    if (!src) return { result: str, hits: 0 };
     let result = str;
     let searchFrom = 0;
     let passes = 0;
+    let hits = 0;
 
     // Работаем по копии, которую пересобираем по мере замен, чтобы индексы не съезжали.
     while (true) {
@@ -154,6 +157,7 @@ function anchoredReplace(str, src, textAfter) {
         const jsonEnd = tagStart + jsonEndInTag;
 
         result = result.slice(0, jsonStart) + textAfter + result.slice(jsonEnd);
+        hits++;
 
         // Продолжаем поиск ЗА концом только что переписанного тега, а не за концом
         // вставленного JSON. Канонический порядок атрибутов у SLAY —
@@ -167,7 +171,7 @@ function anchoredReplace(str, src, textAfter) {
         searchFrom = Math.max(searchFrom + 1, tagStart + tagLengthAfter);
     }
 
-    return result;
+    return { result, hits };
 }
 
 // ST энтити-кодирует не-ASCII в тексте сообщения десятичными энтити: кириллический
@@ -193,9 +197,11 @@ function encodeNonAscii(str) {
 // значению он её не находит, кладёт новый src в отсоединённый узел, и картинка
 // появляется в галерее, но на экране остаётся прежней.
 //
-// Возвращает { rewrite, methods } — methods наполняется по ходу обхода.
+// Возвращает { rewrite, methods, wasMatched } — methods и признак совпадения
+// наполняются по ходу обхода.
 function buildRewriter({ rawDom, textAfter, src }) {
     const methods = new Set();
+    let matched = false;
     const forms = [
         ['exact', rawDom],
         // getAttribute отдаёт декодированное значение, а в тексте лежит экранированное.
@@ -213,20 +219,22 @@ function buildRewriter({ rawDom, textAfter, src }) {
         for (const [name, needle] of forms) {
             if (!needle || !str.includes(needle)) continue;
             methods.add(name);
+            matched = true;
             return replaceAll(str, needle, textAfter);
         }
         // Последний рубеж: находим тег по src и вырезаем JSON брейс-каунтингом.
         if (src) {
-            const out = anchoredReplace(str, src, textAfter);
-            if (out !== str) {
+            const { result, hits } = anchoredReplace(str, src, textAfter);
+            if (hits > 0) {
                 methods.add('anchored');
-                return out;
+                matched = true;
+                return result;
             }
         }
         return str;
     };
 
-    return { rewrite, methods };
+    return { rewrite, methods, wasMatched: () => matched };
 }
 
 // Обновляет data-iig-instruction на каждом элементе DOM, у которого текущее
@@ -261,29 +269,39 @@ export async function persistInstruction({ targetEl, rawDom, newData }) {
 
     let method = 'dom-only';
     let textChanged = false;
+    // Успех определяется тем, НАШЛАСЬ ли инструкция в тексте сообщения, а не тем,
+    // изменилась ли строка. Повторное сохранение без правок (открыл окно → сразу
+    // «Сохранить и перегенерировать») переписывает текст тем же значением: замена
+    // возвращает ту же строку, textChanged === false — и раньше это давало ложную
+    // ошибку «правка применена только к DOM» плюс отказ от перегенерации в index.js,
+    // хотя в чате лежал ровно нужный промпт.
+    let matched = false;
 
     if (message) {
         // Один обход всех мест хранения: форма записи подбирается внутри, для каждого
         // поля своя (см. buildRewriter).
-        const { rewrite, methods } = buildRewriter({
+        const { rewrite, methods, wasMatched } = buildRewriter({
             rawDom,
             textAfter,
             src: targetEl?.getAttribute?.('src'),
         });
         textChanged = walkMessageStrings(message, rewrite);
-        if (textChanged) method = [...methods].join('+');
+        matched = wasMatched();
+        if (matched) method = [...methods].join('+');
     }
 
     // DOM обновляем всегда, независимо от исхода записи в текст.
     const domCount = updateDomCopies(rawDom, domAfter);
 
-    if (!message || !textChanged) {
+    if (!message || !matched) {
         logWarn(
             `persistInstruction: инструкция не найдена в тексте сообщения (dom-only, обновлено DOM-копий: ${domCount})`,
         );
         return { ok: false, method: 'dom-only', savedToDisk: false };
     }
 
+    // saveChat зовём и когда текст не изменился: это идемпотентно, зато чинит случай,
+    // когда предыдущая запись ушла в saveChatDebounced и на диск ещё не легла.
     let savedToDisk = false;
     try {
         await ctx.saveChat();
@@ -297,7 +315,10 @@ export async function persistInstruction({ targetEl, rawDom, newData }) {
         }
     }
 
-    logInfo(`инструкция записана (method=${method}, DOM-копий обновлено: ${domCount})`);
+    logInfo(
+        `инструкция записана (method=${method}, изменений в тексте: ${textChanged ? 'да' : 'нет (значение уже совпадало)'}`
+        + `, DOM-копий обновлено: ${domCount})`,
+    );
 
     return { ok: true, method, savedToDisk };
 }

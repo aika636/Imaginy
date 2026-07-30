@@ -158,6 +158,51 @@ const NEW_DATA = { prompt: 'new prompt', style: 'anime' };
         img.getAttribute('data-iig-instruction').includes('new prompt'), true);
 }
 
+// ── 5. Повторное сохранение без правок: значение уже совпадает — это успех ──────
+// Сценарий с мобильной таверны: правим промпт → сохраняем → открываем окно снова →
+// сразу «Сохранить и перегенерировать», ничего не меняя. Замена переписывает текст
+// тем же значением, строка не меняется — раньше это давало ok=false, ложную ошибку
+// «правка применена только к DOM» и отказ от перегенерации.
+{
+    const savesBefore = savedToDisk;
+    const already = JSON.stringify(NEW_DATA);
+    const img = setup({
+        message: { mes: `<img data-iig-instruction='${already}' src="${SRC_PATH}">` },
+        domHtml: `<img data-iig-instruction='${already}' src="${SRC_PATH}">`,
+    });
+
+    const res = await persistInstruction({
+        targetEl: img,
+        rawDom: img.getAttribute('data-iig-instruction'),
+        newData: NEW_DATA,
+    });
+
+    check('без правок: ok=true', res.ok, true);
+    check('без правок: метод не dom-only', res.method, 'exact');
+    check('без правок: чат сохранён', savedToDisk, savesBefore + 1);
+    check('без правок: текст остался корректным', chat[0].mes.includes('new prompt'), true);
+}
+
+// ── 6. То же самое, но через anchored (в тексте другая форма кавычек) ───────────
+{
+    const already = JSON.stringify(NEW_DATA);
+    const img = setup({
+        // В тексте JSON записан с пробелами — точные формы не совпадут, пойдёт anchored,
+        // и подстановка даст ровно ту же строку, что уже там.
+        message: { mes: `<img data-iig-instruction='{"prompt": "new prompt", "style": "anime"}' src="${SRC_PATH}">` },
+        domHtml: `<img data-iig-instruction='${already}' src="${SRC_PATH}">`,
+    });
+
+    const res = await persistInstruction({
+        targetEl: img,
+        rawDom: img.getAttribute('data-iig-instruction'),
+        newData: NEW_DATA,
+    });
+
+    check('без правок (anchored): ok=true', res.ok, true);
+    check('без правок (anchored): метод', res.method, 'anchored');
+}
+
 let failed = 0;
 for (const r of results) {
     if (!r.ok) failed++;
