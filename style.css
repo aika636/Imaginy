@@ -110,8 +110,8 @@
     position: relative;
 }
 
-/* ── Редактор промпта (src/editor.js) — собственный оверлей, см. CLAUDE.md /
-   docs/plan-fork.md о том, почему не callGenericPopup. ── */
+/* ── Редактор промпта (src/editor.js) — собственный оверлей, а не callGenericPopup
+   хоста: так модалка не зависит от чужого CSS и версии SillyTavern. ── */
 
 .imaginy-modal-overlay {
     position: fixed;

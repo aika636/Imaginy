@@ -1,4 +1,4 @@
-// Профиль хоста: SLAY Images v4.3.1 (upstream/ — read-only клон, см. CLAUDE.md).
+// Профиль хоста: SLAY Images v4.3.1 (https://github.com/wewwaistyping/SLAYimages).
 // Поведение этого профиля — ровно то, что Imaginy делал до появления host-профилей.
 
 import { ATTR, SEL_IMAGE, SEL_VIDEO, no, regenViaWrapButton } from './common.js';
