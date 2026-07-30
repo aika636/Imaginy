@@ -95,6 +95,12 @@ export function extractJsonSpan(text, jsonStart) {
     return jsonEnd; // -1, если не нашли
 }
 
+// Верхняя граница числа замен в одной строке. Реально в сообщении единицы картинок,
+// так что предел недостижим; он существует только как последний предохранитель от
+// зацикливания — цена ошибки здесь не «не сохранилось», а намертво повешенная вкладка
+// (главный поток занят), из которой пользователь выходит только закрытием таверны.
+const ANCHORED_MAX_PASSES = 500;
+
 // Стратегия "anchored": находит тег по src, внутри тега — атрибут
 // data-iig-instruction, вырезает его JSON-значение брейс-каунтингом и заменяет на
 // textAfter. Повторяет для каждого вхождения src в строке. Возвращает новую строку
@@ -103,9 +109,14 @@ function anchoredReplace(str, src, textAfter) {
     if (!src) return str;
     let result = str;
     let searchFrom = 0;
+    let passes = 0;
 
     // Работаем по копии, которую пересобираем по мере замен, чтобы индексы не съезжали.
     while (true) {
+        if (++passes > ANCHORED_MAX_PASSES) {
+            logWarn(`anchoredReplace: превышен предел в ${ANCHORED_MAX_PASSES} замен — прерываю`);
+            break;
+        }
         const srcIdx = result.indexOf(src, searchFrom);
         if (srcIdx === -1) break;
 
@@ -144,11 +155,79 @@ function anchoredReplace(str, src, textAfter) {
         const jsonEnd = tagStart + jsonEndInTag;
 
         result = result.slice(0, jsonStart) + textAfter + result.slice(jsonEnd);
-        // Продолжаем поиск после только что вставленного текста.
-        searchFrom = jsonStart + textAfter.length;
+
+        // Продолжаем поиск ЗА концом только что переписанного тега, а не за концом
+        // вставленного JSON. Канонический порядок атрибутов у SLAY —
+        // `<img data-iig-instruction='{...}' src="...">` (upstream/prompt.md:26), то есть
+        // JSON стоит ПЕРЕД src. Прежняя точка (`jsonStart + textAfter.length`) оказывалась
+        // левее найденного src, следующая итерация находила тот же src, переписывала тот
+        // же атрибут тем же значением — и так вечно: главный поток вставал намертво, и
+        // таверну приходилось закрывать. Max с текущей позицией гарантирует, что курсор
+        // всегда двигается вперёд, даже если новый JSON сильно короче старого.
+        const tagLengthAfter = tagSlice.length + textAfter.length - (jsonEndInTag - jsonStartInTag);
+        searchFrom = Math.max(searchFrom + 1, tagStart + tagLengthAfter);
     }
 
     return result;
+}
+
+// ST энтити-кодирует не-ASCII в тексте сообщения десятичными энтити: кириллический
+// промпт лежит в чате как "&#1040;&#1085;...", а getAttribute отдаёт его уже
+// раскодированным (docs/sillytavern-api.md §2.3). Без этой формы поиска ни одна из
+// точных стратегий не совпадала на русском промпте, и запись всегда сваливалась в
+// anchored.
+function encodeNonAscii(str) {
+    return str.replace(/[\u{80}-\u{10FFFF}]/gu, (ch) => `&#${ch.codePointAt(0)};`);
+}
+
+// Одна функция замены на все места хранения текста.
+//
+// Формы записи инструкции подбираются ДЛЯ КАЖДОГО ПОЛЯ ОТДЕЛЬНО, а не одна на всё
+// сообщение. Раньше стратегии перебирались снаружи: первая, что изменила хоть одно
+// поле, объявлялась победившей, и обход останавливался — а поля хранятся в разных
+// формах (mes может лежать как есть, а extra.display_text — в экранированной или
+// энтити-кодированной). В итоге часть мест хранения оставалась со старой инструкцией:
+// расширение картинок перегенерировало по новому промпту, но стоило SillyTavern
+// перерисовать сообщение из непочиненного поля — и в DOM возвращалась старая
+// инструкция. Хост после генерации ищет свою картинку в DOM по значению
+// data-iig-instruction (upstream findLiveImgByInstruction, index.js:3654) — по старому
+// значению он её не находит, кладёт новый src в отсоединённый узел, и картинка
+// появляется в галерее, но на экране остаётся прежней.
+//
+// Возвращает { rewrite, methods } — methods наполняется по ходу обхода.
+function buildRewriter({ rawDom, textAfter, src }) {
+    const methods = new Set();
+    const forms = [
+        ['exact', rawDom],
+        // getAttribute отдаёт декодированное значение, а в тексте лежит экранированное.
+        // На любом промпте с "'" или "&" это не редкий фолбэк, а основной путь.
+        ['escaped', escapeForText(rawDom)],
+        // Числовые энтити ST (кириллица) decodeEntities не трогает, поэтому в rawDom они
+        // остались бы как "&#1040;" — escapeForText превратил бы их "&" в "&amp;" и сломал
+        // совпадение. Здесь экранируем только апостроф.
+        ['escaped-quotes', rawDom.replace(/'/g, '&#39;')],
+        // Кириллица (и любой не-ASCII) в том виде, в каком её хранит ST.
+        ['entities', encodeNonAscii(escapeForText(rawDom))],
+    ];
+
+    const rewrite = (str) => {
+        for (const [name, needle] of forms) {
+            if (!needle || !str.includes(needle)) continue;
+            methods.add(name);
+            return replaceAll(str, needle, textAfter);
+        }
+        // Последний рубеж: находим тег по src и вырезаем JSON брейс-каунтингом.
+        if (src) {
+            const out = anchoredReplace(str, src, textAfter);
+            if (out !== str) {
+                methods.add('anchored');
+                return out;
+            }
+        }
+        return str;
+    };
+
+    return { rewrite, methods };
 }
 
 // Обновляет data-iig-instruction на каждом элементе DOM, у которого текущее
@@ -185,37 +264,15 @@ export async function persistInstruction({ targetEl, rawDom, newData }) {
     let textChanged = false;
 
     if (message) {
-        // 1. exact — rawDom как он есть.
-        textChanged = walkMessageStrings(message, (str) => replaceAll(str, rawDom, textAfter));
-        if (textChanged) {
-            method = 'exact';
-        } else {
-            // 2. escaped — getAttribute отдаёт декодированное значение, а в тексте
-            // сообщения лежит экранированная форма. На любом промпте с "'" или "&"
-            // это не редкий фолбэк, а основной путь.
-            const rawEscaped = escapeForText(rawDom);
-            textChanged = walkMessageStrings(message, (str) => replaceAll(str, rawEscaped, textAfter));
-            if (textChanged) {
-                method = 'escaped';
-            } else if (
-                // 2b. quote-only — случай, когда в тексте уже лежат числовые энтити
-                // (ST кодирует ими кириллицу, docs/sillytavern-api.md §2.3).
-                // decodeEntities их не трогает, поэтому в rawDom они остаются как
-                // "&#1040;" — и escapeForText превратил бы их "&" в "&amp;",
-                // сломав совпадение. Здесь экранируем только апостроф.
-                walkMessageStrings(message, (str) => replaceAll(str, rawDom.replace(/'/g, '&#39;'), textAfter))
-            ) {
-                textChanged = true;
-                method = 'escaped-quotes';
-            } else {
-                // 3. anchored — по src тега, брейс-каунтингом.
-                const src = targetEl?.getAttribute?.('src');
-                if (src) {
-                    textChanged = walkMessageStrings(message, (str) => anchoredReplace(str, src, textAfter));
-                    if (textChanged) method = 'anchored';
-                }
-            }
-        }
+        // Один обход всех мест хранения: форма записи подбирается внутри, для каждого
+        // поля своя (см. buildRewriter).
+        const { rewrite, methods } = buildRewriter({
+            rawDom,
+            textAfter,
+            src: targetEl?.getAttribute?.('src'),
+        });
+        textChanged = walkMessageStrings(message, rewrite);
+        if (textChanged) method = [...methods].join('+');
     }
 
     // DOM обновляем всегда, независимо от исхода записи в текст.
