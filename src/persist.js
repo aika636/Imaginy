@@ -11,7 +11,7 @@ import { escapeForText, serializeForDom, serializeForText } from './instruction.
 // transform(str) -> str к каждому полю.
 // Возвращает true, если хотя бы одно место реально изменилось (transform вернул
 // другую строку).
-function walkMessageStrings(message, transform) {
+export function walkMessageStrings(message, transform) {
     if (!message) return false;
     let changed = false;
 
@@ -56,6 +56,20 @@ function walkMessageStrings(message, transform) {
 function replaceAll(str, search, replacement) {
     if (!search) return str;
     return str.split(search).join(replacement);
+}
+
+// Меняет путь к картинке во всех местах хранения текста сообщения.
+// Нужна там, где хост обновил src не везде: SLAY при перегенерации всего сообщения
+// пишет новый путь только в message.mes (upstream index.js:4604), и при следующей
+// отрисовке из любого другого места возвращается предыдущая картинка.
+// Замена подстрочная, как у хоста (upstream replaceImageSrcEverywhere): путь файла
+// уникален, и если он встретился в чужом свайпе — там та же картинка, её тоже надо
+// обновить. Возвращает true, если хоть одно место изменилось.
+export function replaceSrcEverywhere(message, oldSrc, newSrc) {
+    if (!message || !oldSrc || !newSrc || oldSrc === newSrc) return false;
+    return walkMessageStrings(message, (str) => (
+        str.includes(oldSrc) ? replaceAll(str, oldSrc, newSrc) : str
+    ));
 }
 
 // Дословный порт брейс-каунтинг алгоритма извлечения JSON из хоста.

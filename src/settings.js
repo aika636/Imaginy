@@ -11,6 +11,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
     showEditButton: true,
     regenerateAfterSave: false,
+    // Досинхронизация путей к картинкам по всем местам хранения текста сообщения
+    // (src/srcsync.js). Лечит откат перегенерированной картинки на самую первую после
+    // перезагрузки страницы. Выключатель нужен на случай конфликта с хостом.
+    syncImageSrc: true,
     // Последний непустой «Стиль» из редактора. Живёт в extensionSettings (глобальные
     // настройки ST), а не в метаданных чата, поэтому переживает и смену чата, и
     // перезагрузку страницы: редактор подставляет его, когда в инструкции стиля нет.
@@ -60,10 +64,12 @@ export async function initSettingsUI(onSettingsChanged) {
     const $enabled = $('#imaginy_enabled');
     const $showEditButton = $('#imaginy_show_edit_button');
     const $regenerateAfterSave = $('#imaginy_regenerate_after_save');
+    const $syncImageSrc = $('#imaginy_sync_image_src');
 
     $enabled.prop('checked', settings.enabled);
     $showEditButton.prop('checked', settings.showEditButton);
     $regenerateAfterSave.prop('checked', settings.regenerateAfterSave);
+    $syncImageSrc.prop('checked', settings.syncImageSrc);
 
     $enabled.on('change', function () {
         const s = getSettings();
@@ -82,6 +88,12 @@ export async function initSettingsUI(onSettingsChanged) {
     $regenerateAfterSave.on('change', function () {
         const s = getSettings();
         s.regenerateAfterSave = this.checked;
+        saveSettings();
+    });
+
+    $syncImageSrc.on('change', function () {
+        const s = getSettings();
+        s.syncImageSrc = this.checked;
         saveSettings();
     });
 

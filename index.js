@@ -8,6 +8,7 @@ import { readInstruction } from './src/instruction.js';
 import { openEditor } from './src/editor.js';
 import { persistInstruction } from './src/persist.js';
 import { canRegen, requestRegen } from './src/regen.js';
+import { initSrcSync } from './src/srcsync.js';
 
 const VERSION = '0.3.1';
 
@@ -127,6 +128,7 @@ jQuery(async () => {
     try {
         initSettingsPanel();
         initDecoration({ onEdit });
+        initSrcSync();
         logInfo(`v${VERSION} загружен`);
     } catch (err) {
         logError('инициализация упала', err);
