@@ -110,6 +110,19 @@
     position: relative;
 }
 
+/* Ряд «Запомненный стиль» в панели настроек (settings.html). Textarea по умолчанию
+   inline-block со своей шириной в символах — без width она не совпадает по краю с
+   остальной панелью, а кнопка «Забыть» липнет к ней вплотную. */
+.imaginy-row-style textarea {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+}
+
+.imaginy-row-style .menu_button {
+    margin: 4px 0;
+}
+
 /* ── Редактор промпта (src/editor.js) — собственный оверлей, а не callGenericPopup
    хоста: так модалка не зависит от чужого CSS и версии SillyTavern. ── */
 

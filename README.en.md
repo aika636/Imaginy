@@ -95,11 +95,13 @@ intercepts it.
 
 ## Settings
 
-| Toggle | What it does |
+| Setting | What it does |
 |---|---|
 | Enable Imaginy | Turns the extension off completely without uninstalling it |
 | Show the pencil button on images | Hides the pencil while keeping the extension active |
 | Regenerate after saving the prompt | Makes plain "Save" start generation right away |
+| Pin regenerated images | Writes the new image path into every place SillyTavern keeps the message text — otherwise the image may revert to the very first one after a page reload |
+| Remembered style | The last style you used. Shared across all chats and characters; the editor pre-fills it when an image has no style of its own. It does not affect generation by itself. The "Forget" button clears it |
 
 ## Limitations
 

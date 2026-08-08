@@ -1,7 +1,7 @@
 // Настройки Imaginy: extensionSettings.Imaginy (camelCase-поле контекста ST),
 // с мержем недостающих ключей при апгрейде.
 
-import { getCtx } from './ctx.js';
+import { getCtx, toast } from './ctx.js';
 import { logError, logInfo } from './log.js';
 import { getHost } from './host.js';
 
@@ -97,9 +97,70 @@ export async function initSettingsUI(onSettingsChanged) {
         saveSettings();
     });
 
+    bindLastStyle();
     bindHostName();
 
     logInfo('панель настроек инициализирована');
+}
+
+// Поле «Запомненный стиль»: тот же lastStyle, что подставляет редактор, только
+// доступный без открытия картинки. Своя обёртка в try/catch — панель обязана
+// инициализироваться целиком, даже если этот кусок упал.
+function bindLastStyle() {
+    try {
+        const $lastStyle = $('#imaginy_last_style');
+        $lastStyle.val(getSettings().lastStyle ?? '');
+
+        // В настройки кладём тримленое значение — ровно то же, что пишет редактор
+        // (src/editor.js, rememberStyle). Иначе «  foo\n», набранное здесь, после
+        // первого же сохранения в редакторе скачком превратилось бы в «foo», а стиль
+        // из одних пробелов осел бы в настройках, никогда не подставляясь: редактор
+        // требует lastStyle.trim().length > 0. Само поле при этом не переписываем —
+        // иначе у пользователя прыгал бы курсор прямо во время набора.
+        // saveSettings дебаунсится, звать на каждый ввод нормально.
+        $lastStyle.on('input', function () {
+            // Тело обработчика выполняется много позже привязки и внешним try уже не
+            // накрыто: getSettings() зовёт SillyTavern.getContext(), который может
+            // бросить. Без своего catch исключение ушло бы наружу из jQuery.
+            try {
+                getSettings().lastStyle = this.value.trim();
+                saveSettings();
+            } catch (err) {
+                logError('не удалось запомнить стиль из панели настроек', err);
+            }
+        });
+
+        $('#imaginy_forget_style').on('click', function () {
+            try {
+                // Сначала настройки, потом поле: если запись упадёт, поле останется
+                // заполненным и покажет реальное состояние, а не пустоту с тостом об успехе.
+                getSettings().lastStyle = '';
+                saveSettings();
+                $lastStyle.val('');
+                toast('success', 'Запомненный стиль забыт');
+            } catch (err) {
+                logError('не удалось забыть стиль', err);
+                toast('error', 'Не удалось забыть стиль');
+            }
+        });
+    } catch (err) {
+        logError('не удалось привязать поле запомненного стиля', err);
+    }
+}
+
+// Редактор меняет lastStyle сам (при сохранении и по кнопке «Забыть» в подсказке), а
+// панель строится один раз — без этого вызова она показывала бы устаревшее значение.
+// Живёт здесь, а не в editor.js, чтобы не появился цикл settings.js -> editor.js.
+export function refreshLastStyleField() {
+    try {
+        const el = document.getElementById('imaginy_last_style');
+        if (!el) return;
+        // В фокусе — значит пользователь печатает прямо сейчас; затирать его ввод нельзя.
+        if (document.activeElement === el) return;
+        el.value = getSettings().lastStyle ?? '';
+    } catch (err) {
+        logError('не удалось обновить поле запомненного стиля', err);
+    }
 }
 
 // Показывает в панели, какое расширение картинок Imaginy считает активным. Детект по

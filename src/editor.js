@@ -8,7 +8,7 @@ import { toast } from './ctx.js';
 import { logError, logInfo, logWarn } from './log.js';
 import { getAspectRatioContext, setAspectRatioFromPrompt, getStyleContext, clearHostStyle } from './hostquirks.js';
 import { getHost } from './host.js';
-import { getSettings, saveSettings } from './settings.js';
+import { getSettings, saveSettings, refreshLastStyleField } from './settings.js';
 
 // Поля image_size / quality / preset намеренно не редактируются: у активного
 // naistera-пути хост их вообще не отправляет (в теле запроса только
@@ -25,6 +25,11 @@ const FIELDS = [
 const EDITOR_BUILD = '0.3.1';
 
 let modalOpen = false;
+// settle() текущей модалки. Нужен ровно для одного случая: оверлей вынесли из DOM мимо
+// редактора (чужой скрипт, перерисовка чата) — тогда закрыть окно уже некому, а промис
+// прошлого openEditor остался бы неразрешённым навсегда. index.js его ждёт (await), так
+// что вместе с промисом подвис бы и onEdit.
+let pendingSettle = null;
 
 function isMac() {
     try {
@@ -140,6 +145,14 @@ export function openEditor({ data, kind, regen }) {
     }
     if (modalOpen) {
         logWarn('openEditor: залипший флаг modalOpen без оверлея в DOM — сбрасываю');
+        // Добиваем промис прошлого вызова: его окна уже нет, ответа от пользователя не
+        // будет никогда, а ждущий его onEdit иначе не проснётся.
+        try {
+            pendingSettle?.(null);
+        } catch (err) {
+            logWarn('openEditor: не удалось закрыть промис прошлой модалки', err);
+        }
+        pendingSettle = null;
         modalOpen = false;
     }
     modalOpen = true;
@@ -152,6 +165,9 @@ export function openEditor({ data, kind, regen }) {
             // навсегда: окно не появлялось, а следующий клик отвечал «Редактор уже открыт».
             // Теперь состояние откатывается, а причина видна пользователю без консоли.
             modalOpen = false;
+            // Модалка могла успеть зарегистрировать settle до падения — ссылка на неё
+            // больше не годится, промис резолвим прямо здесь.
+            pendingSettle = null;
             document.querySelector('.imaginy-modal-overlay')?.remove();
             logError('openEditor: не удалось построить модалку', err);
             toast('error', `Не удалось открыть редактор: ${err?.message ?? err}`);
@@ -164,6 +180,10 @@ function buildModal({ data, kind, regen }, resolve) {
     const inputs = {}; // key -> <textarea>|<input>
     let dirty = false;
     let settled = false;
+
+    // Объявление settle поднято, так что ссылку можно взять уже здесь — до того, как
+    // хоть что-то успеет упасть. Снимается она в самом settle и в catch у openEditor.
+    pendingSettle = settle;
 
     const overlay = document.createElement('div');
     overlay.className = 'imaginy-modal-overlay';
@@ -381,6 +401,7 @@ function buildModal({ data, kind, regen }, resolve) {
                         const s = getSettings();
                         s.lastStyle = '';
                         saveSettings();
+                        refreshLastStyleField();
                     } catch (err) {
                         logWarn('openEditor: не удалось забыть стиль', err);
                     }
@@ -517,6 +538,7 @@ function buildModal({ data, kind, regen }, resolve) {
     function settle(value) {
         if (settled) return;
         settled = true;
+        if (pendingSettle === settle) pendingSettle = null;
         try {
             cleanup();
         } finally {
@@ -534,6 +556,7 @@ function buildModal({ data, kind, regen }, resolve) {
             if (s.lastStyle === value) return;
             s.lastStyle = value;
             saveSettings();
+            refreshLastStyleField();
         } catch (err) {
             logWarn('openEditor: не удалось запомнить стиль', err);
         }
