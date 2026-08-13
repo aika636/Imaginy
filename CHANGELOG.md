@@ -3,7 +3,7 @@
 Формат — по [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — по
 [semver](https://semver.org/lang/ru/).
 
-## Не выпущено
+## 0.5.0
 
 ### Добавлено
 
