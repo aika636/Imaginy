@@ -42,6 +42,10 @@ const FALLBACK_LINE_HEIGHT = 21;
 // сторону просто оставит окно чуть просторнее.
 const ASSUMED_KEYBOARD_FREE_SHARE = 0.55;
 
+// Сколько символов прошлого промпта показывать в строке возврата. Больше не влезает в
+// одну строку даже на широком экране, а узнать свой прошлый текст хватает и по началу.
+const HISTORY_PREVIEW_CHARS = 60;
+
 // Метка сборки в логе и в диагностическом тосте: главный вопрос при разборе проблемы
 // на телефоне — доехал ли туда новый код вообще, или браузер отдаёт модуль из кэша.
 // Берётся из общего src/version.js: своя строка здесь уже однажды разъехалась с
@@ -158,7 +162,9 @@ async function copyToClipboard(text) {
 // regen — результат canRegen(targetEl, kind) из src/regen.js: { ok, reason }.
 // Единственный источник истины для того, можно ли перегенерировать и почему нет —
 // сам regen.js; здесь мы только показываем его вердикт.
-export function openEditor({ data, kind, regen }) {
+// history — { versions: string[], foreign: boolean } из src/history.js; необязателен,
+// без него редактор просто не показывает строку с прошлыми версиями.
+export function openEditor({ data, kind, regen, history }) {
     // Флаг сверяем с реальным DOM: если модалка «открыта», но оверлея на странице нет,
     // значит прошлый вызов упал на полпути (или узел вынесли извне) — тогда флаг
     // залипший, и держать пользователя в состоянии «редактор уже открыт» до перезагрузки
@@ -183,7 +189,7 @@ export function openEditor({ data, kind, regen }) {
 
     return new Promise((resolve) => {
         try {
-            buildModal({ data, kind, regen }, resolve);
+            buildModal({ data, kind, regen, history }, resolve);
         } catch (err) {
             // Любое исключение при сборке модалки раньше оставляло modalOpen === true
             // навсегда: окно не появлялось, а следующий клик отвечал «Редактор уже открыт».
@@ -200,7 +206,7 @@ export function openEditor({ data, kind, regen }) {
     });
 }
 
-function buildModal({ data, kind, regen }, resolve) {
+function buildModal({ data, kind, regen, history }, resolve) {
     const inputs = {}; // key -> <textarea>|<input>
     const wraps = {};  // key -> .imaginy-field (обёртка поля, ею управляет applyLayout)
     let dirty = false;
@@ -299,6 +305,10 @@ function buildModal({ data, kind, regen }, resolve) {
     modal.appendChild(body);
 
     let copyBtn = null;
+    // Строка «Было: …» под промптом. Живёт в переменной, потому что её прячет
+    // applyLayout в компактном режиме: когда на экране осталось на промпт три строки,
+    // возвращать прошлую версию точно не то, ради чего окно открыли.
+    let historyRow = null;
     const host = getHost();
     const aspectCtx = getAspectRatioContext();
     const styleCtx = getStyleContext();
@@ -425,6 +435,14 @@ function buildModal({ data, kind, regen }, resolve) {
         inputs[field.key] = input;
         wraps[field.key] = wrap;
         wrap.appendChild(input);
+
+        // Прошлые версии промпта: сохранение затирает старый текст, и без этой строки
+        // посмотреть, что было до правки, негде. Строка появляется только когда есть
+        // что показать — ни пустого места, ни выключенной кнопки в обычном случае.
+        if (field.key === 'prompt') {
+            historyRow = buildHistoryRow(input);
+            if (historyRow) wrap.appendChild(historyRow);
+        }
 
         // Стиль из инструкции доходит до генерации только когда глобальный стиль хоста
         // не выбран: иначе он перекрывает per-image значение целиком, до всех API-путей
@@ -675,6 +693,10 @@ function buildModal({ data, kind, regen }, resolve) {
         // В компактном режиме подсказка про Ctrl+Enter не нужна вдвойне: места нет, а
         // физической клавиатуры у телефона обычно тоже.
         hint.style.display = compact ? 'none' : '';
+        // Строку с прошлыми версиями в компактном режиме тоже убираем: место уходит
+        // тому полю, которое правят прямо сейчас, а вернуть старый промпт — задача не
+        // для экрана, где на промпт осталось три строки.
+        if (historyRow) historyRow.style.display = compact ? 'none' : '';
         applyStyles(footer, compact
             ? { flexDirection: 'row', alignItems: 'stretch', padding: '8px 12px', gap: '6px' }
             : narrow
@@ -744,6 +766,76 @@ function buildModal({ data, kind, regen }, resolve) {
                 logWarn('applyLayout: не удалось прокрутить к активному полю', err);
             }
         }
+    }
+
+    // Превью прошлого промпта — одной строкой: в подсказке под полем переводы строк
+    // разъезжаются, а полный текст всегда доступен в title строки.
+    function previewOf(text) {
+        const flat = String(text ?? '').replace(/\s+/g, ' ').trim();
+        return flat.length > HISTORY_PREVIEW_CHARS ? `${flat.slice(0, HISTORY_PREVIEW_CHARS)}…` : flat;
+    }
+
+    // Строка «Было: …» с кнопкой «Вернуть». Кнопка не сохраняет — она подставляет текст
+    // в поле, а сохранение остаётся отдельным осознанным нажатием. Повторное нажатие
+    // шагает ещё на версию назад, поэтому подпись всегда говорит, что именно вернётся.
+    function buildHistoryRow(promptInput) {
+        const versions = Array.isArray(history?.versions)
+            ? history.versions.filter((v) => typeof v === 'string' && v.trim().length > 0)
+            : [];
+        const foreign = history?.foreign === true;
+        if (versions.length === 0 && !foreign) return null;
+
+        const row = document.createElement('div');
+        row.className = 'imaginy-field-warning imaginy-history-row';
+        applyStyles(row, {
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '0.8em',
+            opacity: '0.85',
+        });
+
+        const text = document.createElement('span');
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'imaginy-copy-btn';
+        btn.textContent = 'Вернуть';
+
+        // Промпт мог поменяться мимо нас (правка сообщения руками, другой форк, откат
+        // файла чата). Честно говорим об этом: тогда «Было» — это то, что мы видели в
+        // прошлый раз, а не обязательно предыдущее состояние картинки.
+        const foreignNote = foreign ? 'Промпт меняли не через Imaginy. ' : '';
+        let cursor = 0;
+
+        const render = () => {
+            if (cursor >= versions.length) {
+                text.textContent = `${foreignNote}Прошлых версий больше нет.`;
+                row.removeAttribute('title');
+                btn.remove();
+                return;
+            }
+            const value = versions[cursor];
+            const ordinal = cursor === 0 ? 'Было' : `Ещё раньше (${cursor + 1})`;
+            text.textContent = `${foreignNote}${ordinal}: «${previewOf(value)}»`;
+            row.title = value;
+        };
+
+        btn.addEventListener('click', () => {
+            const value = versions[cursor];
+            if (typeof value !== 'string') return;
+            promptInput.value = value;
+            // Ровно то же, что делает ручной ввод: правка есть, но она не сохранена.
+            dirty = true;
+            cursor++;
+            render();
+            toast('info', 'Прошлый промпт подставлен — сохраните, чтобы применить');
+        });
+
+        row.appendChild(text);
+        row.appendChild(btn);
+        render();
+        return row;
     }
 
     // События вьюпорта на телефоне приходят пачками (клавиатура выезжает анимацией):

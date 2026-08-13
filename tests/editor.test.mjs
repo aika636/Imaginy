@@ -651,6 +651,68 @@ const BASE = { prompt: 'a cat', style: 'anime', aspect_ratio: '16:9' };
     check('версия: manifest совпадает с src/version.js', manifest.version, VERSION);
 }
 
+// ── 12. Прошлые версии промпта ─────────────────────────────────────────────────
+// Строка «Было: …» под промптом. Она только подставляет текст в поле — сохранение
+// остаётся отдельным нажатием, иначе кнопка отката незаметно переписывала бы чат.
+{
+    setEnv();
+    const editing = openEditor({
+        data: { prompt: 'третий промпт' },
+        kind: 'image',
+        regen: { ok: true },
+        history: { versions: ['второй промпт', 'первый промпт'], foreign: false },
+    });
+
+    const row = hintByText(0, 'Было:');
+    check('история: строка показана', row !== null, true);
+    check('история: в подписи начало прошлого промпта',
+        row.textContent.includes('второй промпт'), true);
+    check('история: полный текст в title', row.getAttribute('title'), 'второй промпт');
+    check('история: поле промпта пока не тронуто', els().prompt.value, 'третий промпт');
+
+    row.querySelector('button').click();
+    check('история: промпт подставлен', els().prompt.value, 'второй промпт');
+    check('история: строка шагнула к предыдущей версии',
+        hintByText(0, 'Ещё раньше (2)')?.textContent.includes('первый промпт'), true);
+
+    hintByText(0, 'Ещё раньше (2)').querySelector('button').click();
+    check('история: подставлена самая старая версия', els().prompt.value, 'первый промпт');
+    check('история: больше возвращать нечего',
+        hintByText(0, 'Прошлых версий больше нет') !== null, true);
+    check('история: кнопка убрана',
+        hintByText(0, 'Прошлых версий больше нет').querySelector('button'), null);
+
+    // Подставленный текст — обычное содержимое поля: сохранение уносит в чат именно
+    // его, а не тот промпт, с которым окно открылось.
+    els().save.click();
+    const result = await editing;
+    check('история: сохраняется подставленный промпт', result.data.prompt, 'первый промпт');
+}
+
+// Промпт могли поменять мимо Imaginy — редактор говорит об этом прямо в строке.
+{
+    setEnv();
+    const editing = openEditor({
+        data: { prompt: 'кто-то переписал' },
+        kind: 'image',
+        regen: { ok: true },
+        history: { versions: ['наша версия'], foreign: true },
+    });
+    check('чужая правка: предупреждение показано',
+        hintByText(0, 'меняли не через Imaginy') !== null, true);
+    els().cancel.click();
+    await editing;
+}
+
+// Истории нет — нет и строки: пустое место под полем ничего не объясняет.
+{
+    setEnv();
+    const editing = openEditor({ data: { prompt: 'один' }, kind: 'image', regen: { ok: true } });
+    check('без истории: строки нет', hintByText(0, 'Было:'), null);
+    els().cancel.click();
+    await editing;
+}
+
 // ── итог ───────────────────────────────────────────────────────────────────────
 Object.assign(console, realConsole);
 

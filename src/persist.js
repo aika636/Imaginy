@@ -4,6 +4,7 @@
 import { getCtx } from './ctx.js';
 import { logInfo, logWarn } from './log.js';
 import { escapeForText, serializeForDom, serializeForText } from './instruction.js';
+import { imageIndexOf, recordHistory } from './history.js';
 
 // Обходит все места, где хост хранит текст сообщения — «пять мест» в его терминах,
 // шесть отдельных полей, если считать display_text и extblocks в swipe_info раздельно.
@@ -270,8 +271,10 @@ function updateDomCopies(rawDom, domAfter) {
     return count;
 }
 
-// persistInstruction({ targetEl, rawDom, newData }) -> Promise<{ ok, method, savedToDisk }>
-export async function persistInstruction({ targetEl, rawDom, newData }) {
+// persistInstruction({ targetEl, rawDom, newData, prevData }) -> Promise<{ ok, method, savedToDisk }>
+// prevData — инструкция в том виде, в каком её открыл редактор; нужна только истории
+// промпта (src/history.js), запись в текст сообщения от неё не зависит.
+export async function persistInstruction({ targetEl, rawDom, newData, prevData }) {
     const mesEl = targetEl?.closest?.('.mes');
     const mesid = mesEl ? Number.parseInt(mesEl.getAttribute('mesid'), 10) : NaN;
 
@@ -312,6 +315,25 @@ export async function persistInstruction({ targetEl, rawDom, newData }) {
             `persistInstruction: инструкция не найдена в тексте сообщения (dom-only, обновлено DOM-копий: ${domCount})`,
         );
         return { ok: false, method: 'dom-only', savedToDisk: false };
+    }
+
+    // История промпта пишется здесь, а не в index.js, по одной причине: она обязана
+    // уехать на диск той же записью чата, что и сам промпт. Только после matched —
+    // если инструкция в тексте не нашлась, правка живёт лишь в DOM, и обещать «прошлую
+    // версию» было бы враньём. Упасть история не должна утянуть за собой сохранение
+    // промпта: она удобство, а он — то, зачем пользователь нажал кнопку.
+    try {
+        const index = imageIndexOf(targetEl);
+        if (index < 0) {
+            logWarn('persistInstruction: картинка не найдена в .mes_text — история промпта пропущена');
+        } else {
+            recordHistory(message, index, {
+                before: prevData?.prompt,
+                after: newData?.prompt,
+            });
+        }
+    } catch (err) {
+        logWarn('persistInstruction: не удалось записать историю промпта', err);
     }
 
     // saveChat зовём и когда текст не изменился: это идемпотентно, зато чинит случай,

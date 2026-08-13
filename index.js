@@ -5,6 +5,7 @@ import { logError, logInfo } from './src/log.js';
 import { initSettingsUI, getSettings } from './src/settings.js';
 import { initDecoration, setDecorationEnabled } from './src/decorate.js';
 import { readInstruction } from './src/instruction.js';
+import { readHistoryFor } from './src/history.js';
 import { openEditor } from './src/editor.js';
 import { persistInstruction } from './src/persist.js';
 import { canRegen, requestRegen } from './src/regen.js';
@@ -29,7 +30,8 @@ async function onEdit(targetEl, kind, btn) {
     }
 
     const regen = canRegen(targetEl, kind);
-    const result = await openEditor({ data: instruction.data, kind, regen });
+    const history = readHistoryFor(targetEl, instruction.data?.prompt);
+    const result = await openEditor({ data: instruction.data, kind, regen, history });
     if (!result) return; // отменено пользователем
 
     editInFlight = true;
@@ -49,6 +51,10 @@ async function onEdit(targetEl, kind, btn) {
             targetEl,
             rawDom: instruction.rawDom,
             newData: result.data,
+            // Инструкция в том виде, в каком её открыл редактор: из неё берётся прошлый
+            // промпт для истории. Читать её заново нельзя — атрибут в DOM к этому
+            // моменту уже мог быть переписан.
+            prevData: instruction.data,
         });
 
         if (!ok) {
