@@ -9,6 +9,7 @@ import { logError, logInfo, logWarn } from './log.js';
 import { getAspectRatioContext, setAspectRatioFromPrompt, getStyleContext, clearHostStyle } from './hostquirks.js';
 import { getHost } from './host.js';
 import { getSettings, saveSettings, refreshLastStyleField } from './settings.js';
+import { VERSION } from './version.js';
 
 // Поля image_size / quality / preset намеренно не редактируются: у активного
 // naistera-пути хост их вообще не отправляет (в теле запроса только
@@ -43,7 +44,9 @@ const ASSUMED_KEYBOARD_FREE_SHARE = 0.55;
 
 // Метка сборки в логе и в диагностическом тосте: главный вопрос при разборе проблемы
 // на телефоне — доехал ли туда новый код вообще, или браузер отдаёт модуль из кэша.
-const EDITOR_BUILD = '0.4.0';
+// Берётся из общего src/version.js: своя строка здесь уже однажды разъехалась с
+// остальными местами и врала при том самом разборе, ради которого заведена.
+const EDITOR_BUILD = VERSION;
 
 let modalOpen = false;
 // settle() текущей модалки. Нужен ровно для одного случая: оверлей вынесли из DOM мимо

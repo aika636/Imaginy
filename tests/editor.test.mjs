@@ -9,6 +9,7 @@
 // резолвится результатом по кнопке сохранения и null по отмене. Проверяем сборку
 // результата, память стиля, подсказки о перекрытии настройками хоста и вердикт regen.
 import { JSDOM } from 'jsdom';
+import { readFile } from 'node:fs/promises';
 
 const SRC = new URL('../src/', import.meta.url).pathname;
 
@@ -635,6 +636,19 @@ const BASE = { prompt: 'a cat', style: 'anime', aspect_ratio: '16:9' };
     check('мышь: курсор в начале текста', mousePrompt.selectionStart, 0);
     els().cancel.click();
     await mouse;
+}
+
+// ── 12. Версия ─────────────────────────────────────────────────────────────────
+// Мест с версией осталось два — src/version.js и manifest.json (последний из модуля
+// не прочитать без сетевого запроса, а их Imaginy не делает). Тест стережёт именно их
+// расхождение: метка сборки в логе редактора нужна, чтобы на телефоне отличить
+// «новый код не доехал» от «доехал, но не работает», и врущая метка хуже её отсутствия.
+{
+    const { VERSION } = await import(`${SRC}version.js`);
+    const manifest = JSON.parse(
+        await readFile(new URL('../manifest.json', import.meta.url), 'utf8'),
+    );
+    check('версия: manifest совпадает с src/version.js', manifest.version, VERSION);
 }
 
 // ── итог ───────────────────────────────────────────────────────────────────────

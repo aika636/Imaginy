@@ -214,6 +214,50 @@ export function reconcileChat() {
     if (fixedMessages) scheduleSave();
 }
 
+// Сверка в скрытой вкладке — работа, которую никто не увидит: чинить DOM там нечего
+// (картинки не отрисованы для глаз), а фоновые вкладки браузер и так душит таймерами.
+// Поэтому в скрытой вкладке проход откладывается до возвращения пользователя.
+// Обходы декорации так НЕ откладываются намеренно: карандаш должен быть на месте уже
+// к моменту возвращения, а стоит он копейки.
+//
+// Слушатель ставится один на все отложенные сверки: пока вкладка скрыта, событий
+// CHAT_CHANGED может прийти сколько угодно, а сверка нужна ровно одна — она в любом
+// случае проходит по всему чату целиком.
+let reconcilePending = false;
+
+function isHidden() {
+    try {
+        return document.visibilityState === 'hidden' || document.hidden === true;
+    } catch (err) {
+        return false;
+    }
+}
+
+function runReconcile() {
+    try {
+        reconcileChat();
+    } catch (err) {
+        logError('reconcileChat упал', err);
+    }
+}
+
+function onVisible() {
+    if (isHidden()) return;
+    document.removeEventListener('visibilitychange', onVisible);
+    reconcilePending = false;
+    runReconcile();
+}
+
+export function reconcileChatWhenVisible() {
+    if (!isHidden()) {
+        runReconcile();
+        return;
+    }
+    if (reconcilePending) return;
+    reconcilePending = true;
+    document.addEventListener('visibilitychange', onVisible);
+}
+
 // ── 1. mirror: перенос смены src из DOM во все места хранения ──────────────────
 
 function currentSrcs(mesTextEl) {
@@ -369,12 +413,11 @@ export function initSrcSync() {
 
     const rebindAndReconcile = (delay) => {
         setTimeout(() => {
+            // Наблюдатель цепляется всегда, даже в скрытой вкладке: перегенерация может
+            // идти и там (её запустили до переключения), и пропущенную смену src потом
+            // уже не восстановить — снимок в snapshots заводится по первому проходу.
             bindObserver(chatRoot());
-            try {
-                reconcileChat();
-            } catch (err) {
-                logError('reconcileChat упал', err);
-            }
+            reconcileChatWhenVisible();
         }, delay);
     };
 

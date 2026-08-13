@@ -9,8 +9,7 @@ import { openEditor } from './src/editor.js';
 import { persistInstruction } from './src/persist.js';
 import { canRegen, requestRegen } from './src/regen.js';
 import { initSrcSync } from './src/srcsync.js';
-
-const VERSION = '0.4.0';
+import { VERSION } from './src/version.js';
 
 const BUSY_BTN_CLASS = 'imaginy-busy';
 const SPIN_ICON_CLASS = 'fa-solid fa-spinner imaginy-spin';

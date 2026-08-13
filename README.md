@@ -1,7 +1,7 @@
 # Imaginy
 
 [![SillyTavern extension](https://img.shields.io/badge/SillyTavern-extension-blue)](https://github.com/SillyTavern/SillyTavern)
-[![version](https://img.shields.io/badge/version-0.3.1-informational)](CHANGELOG.md)
+[![changelog](https://img.shields.io/badge/changelog-%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D0%B8-informational)](CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **Русский** · [English](README.en.md)

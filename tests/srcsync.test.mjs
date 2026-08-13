@@ -30,8 +30,10 @@ global.SillyTavern = {
     }),
 };
 
-const { reconcileMessage, reconcileChat, mirrorMessage, generatedSrcsInText, applySrcByIndex } =
-    await import(`${SRC}srcsync.js`);
+const {
+    reconcileMessage, reconcileChat, reconcileChatWhenVisible, mirrorMessage,
+    generatedSrcsInText, applySrcByIndex,
+} = await import(`${SRC}srcsync.js`);
 const { replaceSrcEverywhere } = await import(`${SRC}persist.js`);
 
 const results = [];
@@ -204,6 +206,51 @@ const tag = (src) => `<img ${INSTR} src="${src}">`;
     check('mirror: display_text', generatedSrcsInText(chat[0].extra.display_text)[0], NEW);
     check('mirror: swipes', generatedSrcsInText(chat[0].swipes[0])[0], NEW);
     check('mirror: повторный проход без изменений', mirrorMessage(mesEl), false);
+}
+
+// ── 10. Скрытая вкладка: сверка ждёт возвращения ───────────────────────────────
+// В скрытой вкладке чинить нечего: DOM никто не видит, а таймеры фоновой вкладки
+// браузер и так душит. Работа должна не пропасть, а дождаться visibilitychange.
+{
+    let visibility = 'hidden';
+    Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => visibility,
+    });
+    Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        get: () => visibility === 'hidden',
+    });
+
+    const broken = () => ({
+        mes: `Смотри: ${tag(NEW)}`,
+        extra: { display_text: `Смотри: ${tag(OLD)}` },
+    });
+
+    chat = [broken()];
+    reconcileChatWhenVisible();
+    check('скрытая вкладка: сверка не выполнена',
+        generatedSrcsInText(chat[0].extra.display_text)[0], OLD);
+
+    // Второй вызов, пока вкладка всё ещё скрыта: слушатель должен остаться один,
+    // иначе на возвращении сверка прошла бы столько раз, сколько было CHAT_CHANGED.
+    reconcileChatWhenVisible();
+
+    visibility = 'visible';
+    document.dispatchEvent(new dom.window.Event('visibilitychange'));
+    check('возвращение на вкладку: сверка выполнена',
+        generatedSrcsInText(chat[0].extra.display_text)[0], NEW);
+
+    // Слушатель снят: следующее visibilitychange не должно тянуть за собой сверку.
+    chat = [broken()];
+    document.dispatchEvent(new dom.window.Event('visibilitychange'));
+    check('слушатель снят: повторное событие сверку не запускает',
+        generatedSrcsInText(chat[0].extra.display_text)[0], OLD);
+
+    // Видимая вкладка — сверка идёт сразу, без ожидания события.
+    reconcileChatWhenVisible();
+    check('видимая вкладка: сверка выполнена сразу',
+        generatedSrcsInText(chat[0].extra.display_text)[0], NEW);
 }
 
 let failed = 0;
