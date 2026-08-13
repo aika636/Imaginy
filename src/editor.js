@@ -20,9 +20,30 @@ const FIELDS = [
     { key: 'aspect_ratio', label: 'Соотношение сторон', kind: 'select' },
 ];
 
+// Пороги раскладки заданы в строках текста, а не в пикселях. Пиксель на разных
+// устройствах означает разное: высота строки зависит от темы ST, размера шрифта в
+// настройках браузера и системного масштаба, поэтому «560 px» на одном телефоне — это
+// 26 строк, а на другом с крупным шрифтом — 16. Считаем в том, что важно на самом деле:
+// сколько строк текста помещается в видимую часть экрана.
+//
+// ROOMY_LINES — сколько строк просит просторная раскладка (шапка, три поля целиком,
+// кнопки столбиком с подсказкой о горячих клавишах). Меньше — ужимаем «обвязку».
+// FOCUS_LINES — ниже этого даже с ужатой обвязкой всем полям сразу тесно, и высоту
+// забирает то поле, которое правят прямо сейчас.
+const ROOMY_LINES = 32;
+const FOCUS_LINES = 26;
+// Запасная высота строки: используется, только если стили поля почему-то не читаются
+// (jsdom в тестах, экзотический движок). Примерно 1.35 от типового шрифта в 16px.
+const FALLBACK_LINE_HEIGHT = 21;
+// Фолбэк для движков без visualViewport (старые WebView и встроенные браузеры в
+// приложениях): там всплывшую клавиатуру не видно ни в одном измерении, и считается,
+// что она закрывает примерно 45% экрана — цифра консервативная, ошибка в меньшую
+// сторону просто оставит окно чуть просторнее.
+const ASSUMED_KEYBOARD_FREE_SHARE = 0.55;
+
 // Метка сборки в логе и в диагностическом тосте: главный вопрос при разборе проблемы
 // на телефоне — доехал ли туда новый код вообще, или браузер отдаёт модуль из кэша.
-const EDITOR_BUILD = '0.3.1';
+const EDITOR_BUILD = '0.4.0';
 
 let modalOpen = false;
 // settle() текущей модалки. Нужен ровно для одного случая: оверлей вынесли из DOM мимо
@@ -178,8 +199,16 @@ export function openEditor({ data, kind, regen }) {
 
 function buildModal({ data, kind, regen }, resolve) {
     const inputs = {}; // key -> <textarea>|<input>
+    const wraps = {};  // key -> .imaginy-field (обёртка поля, ею управляет applyLayout)
     let dirty = false;
     let settled = false;
+    // Поле, которое пользователь правит прямо сейчас: когда места мало, именно оно
+    // забирает всю свободную высоту, остальные сжимаются до подписи и пары строк.
+    let focusedKey = 'prompt';
+    // Поле, к которому уже прокручивали тело модалки, и флаг склейки пересчётов
+    // раскладки — оба живут в requestLayout/applyLayout.
+    let shownKey = 'prompt';
+    let layoutQueued = false;
 
     // Объявление settle поднято, так что ссылку можно взять уже здесь — до того, как
     // хоть что-то успеет упасть. Снимается она в самом settle и в catch у openEditor.
@@ -364,11 +393,34 @@ function buildModal({ data, kind, regen }, resolve) {
         input.addEventListener('input', () => {
             dirty = true;
         });
+        input.addEventListener('focus', () => {
+            focusedKey = field.key;
+            // Клавиатура всплывает не мгновенно: пересобираем раскладку и сразу (по
+            // текущим размерам), и по событию visualViewport, когда она доедет.
+            applyLayout();
+        });
         if (field.autofocus) {
-            queueMicrotask(() => input.focus());
+            queueMicrotask(() => {
+                // На сенсорном устройстве фокус сразу поднимает экранную клавиатуру, и
+                // окно открывается уже наполовину закрытым — даже если пользователь
+                // зашёл прочитать промпт или нажать «Перегенерировать». Там курсор
+                // ставится по тапу, а не за пользователя.
+                if (hasTouchInput()) return;
+                input.focus();
+                // Курсор по умолчанию встаёт в конец подставленного текста, и длинный
+                // промпт открывается прокрученным на последнюю строку. Начало читать
+                // удобнее — тем более в невысоком окне.
+                try {
+                    input.setSelectionRange(0, 0);
+                } catch (err) {
+                    logWarn('openEditor: не удалось поставить курсор в начало', err);
+                }
+                input.scrollTop = 0;
+            });
         }
 
         inputs[field.key] = input;
+        wraps[field.key] = wrap;
         wrap.appendChild(input);
 
         // Стиль из инструкции доходит до генерации только когда глобальный стиль хоста
@@ -487,7 +539,222 @@ function buildModal({ data, kind, regen }, resolve) {
     footer.appendChild(btnSaveRegen);
     footer.appendChild(btnCancel);
 
+    // Короткие подписи для компактного режима: три кнопки в столбик вместе с подсказкой
+    // о горячих клавишах съедали на телефоне со всплывшей клавиатурой около 190 px —
+    // больше, чем оставалось самому промпту.
+    const SHORT_LABELS = new Map([
+        [btnSave, 'Сохранить'],
+        [btnSaveRegen, 'Сохр. + реген.'],
+        [btnCancel, 'Отмена'],
+    ]);
+    const FULL_LABELS = new Map([...SHORT_LABELS.keys()].map((b) => [b, b.textContent]));
+
+    // Всплывшая клавиатура на Android ужимает вьюпорт, на iOS — не ужимает, а сдвигает
+    // видимую область вверх (layout viewport остаётся прежним, поэтому 100dvh там врёт).
+    // visualViewport описывает оба случая честно, поэтому оверлей сажаем прямо на него,
+    // а 100dvh/100vh остаются фолбэком для движков без этого API.
+    const vv = window.visualViewport ?? null;
+
     pickMountRoot().appendChild(overlay);
+    applyLayout();
+    // Клавиатура, поворот экрана, сворачивание адресной строки, разделённый экран,
+    // раскладывающийся телефон — всё это приходит одними и теми же событиями. Слушаем
+    // все: какое из них сработает на конкретном устройстве, заранее не известно.
+    vv?.addEventListener('resize', requestLayout);
+    vv?.addEventListener('scroll', requestLayout);
+    window.addEventListener('resize', requestLayout);
+    window.addEventListener('orientationchange', requestLayout);
+
+    // Высота строки в поле промпта — единица измерения для всех порогов раскладки.
+    function lineHeight() {
+        try {
+            const cs = getComputedStyle(inputs.prompt);
+            const line = parseFloat(cs.lineHeight);
+            if (Number.isFinite(line) && line > 0) return line;
+            const font = parseFloat(cs.fontSize);
+            // line-height: normal вычисляется в 'normal', числом его не получить —
+            // берём типовой множитель от размера шрифта.
+            if (Number.isFinite(font) && font > 0) return font * 1.35;
+        } catch (err) {
+            logWarn('applyLayout: не удалось измерить высоту строки', err);
+        }
+        return FALLBACK_LINE_HEIGHT;
+    }
+
+    // Пальцем по экрану — значит, ввод идёт с экранной клавиатуры. Нужно только для
+    // фолбэка ниже: на устройстве с мышью гадать про клавиатуру не надо.
+    function hasTouchInput() {
+        try {
+            return window.matchMedia?.('(pointer: coarse)').matches === true;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    // Геометрия видимой области и режим раскладки. Единственное место, где расширение
+    // судит о размерах экрана, — и судит по измерению, а не по модели устройства.
+    function measureViewport() {
+        const line = lineHeight();
+        const width = vv?.width ?? window.innerWidth;
+        let height = vv?.height ?? window.innerHeight;
+        let assumedKeyboard = false;
+        if (!vv && hasTouchInput() && document.activeElement?.closest?.('.imaginy-modal')) {
+            // Движок не показывает, что клавиатура всплыла (нет visualViewport), но поле
+            // в фокусе и ввод сенсорный — значит, часть экрана она уже занимает. Без
+            // этой поправки окно раскладывалось бы по всей высоте, а кнопки внизу
+            // оказались бы под клавиатурой и до них было бы не достать.
+            height = Math.round(height * ASSUMED_KEYBOARD_FREE_SHARE);
+            assumedKeyboard = true;
+        }
+        return {
+            width,
+            height,
+            assumedKeyboard,
+            offsetTop: vv?.offsetTop ?? 0,
+            offsetLeft: vv?.offsetLeft ?? 0,
+            narrow: width <= 600,
+            // Двухступенчато: сначала ужимается обвязка окна, и только если места мало
+            // даже с ней — сворачиваются поля, которые сейчас не правят.
+            compact: height < line * ROOMY_LINES,
+            focusPriority: height < line * FOCUS_LINES,
+        };
+    }
+
+    // Единственное место, где решается, как окно разложено. Зовётся при открытии, при
+    // каждом изменении видимой области (клавиатура, поворот, адресная строка) и при
+    // переходе фокуса между полями.
+    function applyLayout() {
+        if (settled) return;
+        const view = measureViewport();
+        const { narrow, compact } = view;
+
+        if (vv) {
+            applyStyles(overlay, {
+                top: `${view.offsetTop}px`,
+                left: `${view.offsetLeft}px`,
+                width: `${view.width}px`,
+                height: `${view.height}px`,
+            });
+        } else if (view.assumedKeyboard) {
+            // Клавиатура посчитана «на глаз» — тогда и окно поднимаем над ней вручную,
+            // иначе нижние кнопки останутся под ней.
+            overlay.style.height = `${view.height}px`;
+        } else {
+            // Ни visualViewport, ни клавиатуры: возвращаем размер по вьюпорту. 100dvh
+            // учитывает свернувшуюся адресную строку, 100vh — фолбэк для движков без dvh
+            // (строка со 100vh остаётся в силе, если dvh не понят).
+            overlay.style.height = '100vh';
+            overlay.style.height = '100dvh';
+        }
+        applyStyles(overlay, { padding: compact ? '0' : narrow ? '8px' : '16px' });
+
+        applyStyles(modal, {
+            maxWidth: narrow ? '100%' : '720px',
+            height: narrow ? '100%' : 'auto',
+            // Проценты, а не vh: оверлей теперь и есть видимая область, а vh на телефоне
+            // со всплывшей клавиатурой считается от полного экрана и промахивается.
+            maxHeight: narrow ? '100%' : '85%',
+            // Компактный режим = места и так в обрез: минимум в 120 px тут только мешал бы
+            // ужаться, а рамка и скругления крадут ещё несколько строк.
+            minHeight: compact ? '0' : '120px',
+            borderRadius: narrow || compact ? '0' : '8px',
+        });
+        modal.classList.toggle('imaginy-compact', compact);
+
+        applyStyles(header, compact
+            ? { padding: '6px 12px', fontSize: '0.9em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+            : { padding: '12px 16px', fontSize: '', whiteSpace: '', overflow: '', textOverflow: '' });
+
+        applyStyles(body, compact
+            ? { padding: '8px 12px', gap: '8px' }
+            : { padding: '12px 16px', gap: '12px' });
+
+        // В компактном режиме подсказка про Ctrl+Enter не нужна вдвойне: места нет, а
+        // физической клавиатуры у телефона обычно тоже.
+        hint.style.display = compact ? 'none' : '';
+        applyStyles(footer, compact
+            ? { flexDirection: 'row', alignItems: 'stretch', padding: '8px 12px', gap: '6px' }
+            : narrow
+                ? { flexDirection: 'column', alignItems: 'stretch', padding: '12px 16px', gap: '8px' }
+                : { flexDirection: 'row', alignItems: '', padding: '12px 16px', gap: '8px' });
+        for (const [btn, short] of SHORT_LABELS) {
+            btn.textContent = compact ? short : FULL_LABELS.get(btn);
+            applyStyles(btn, compact
+                ? { flex: '1 1 0', minWidth: '0', padding: '8px 4px', fontSize: '0.85em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+                : { flex: '', minWidth: '', padding: '', fontSize: '', whiteSpace: '', overflow: '', textOverflow: '' });
+        }
+
+        // Поля. Пока места хватает — всё как раньше: промпт тянется, остальные по
+        // содержимому. Когда его мало, высоту получает то поле, которое правят прямо
+        // сейчас, а соседние сжимаются до подписи и двух строк — они никуда не деваются,
+        // их видно и можно открыть тапом, но они больше не съедают экран у того, что
+        // редактируется.
+        const expandedKey = view.focusPriority ? (focusedKey || 'prompt') : 'prompt';
+        for (const field of FIELDS) {
+            const wrap = wraps[field.key];
+            const input = inputs[field.key];
+            if (!wrap || !input) continue;
+            const expanded = field.key === expandedKey;
+            const isTextarea = field.kind === 'textarea';
+
+            if (!view.focusPriority) {
+                if (isTextarea) input.rows = field.rows;
+                applyStyles(wrap, field.key === 'prompt'
+                    ? { flex: '1 1 auto', minHeight: '124px' }
+                    : { flex: '0 0 auto', minHeight: '' });
+                applyStyles(input, field.key === 'prompt'
+                    ? { flex: '1 1 auto', minHeight: '96px', height: '' }
+                    : { flex: '', minHeight: '', height: '' });
+                continue;
+            }
+
+            // Свёрнутое поле — ровно две строки. Высоту задаём через rows, а не через
+            // height в em: реальная высота строки и внутренние отступы textarea зависят
+            // от темы ST, а rows считает их сам и не режет строку пополам.
+            if (isTextarea) {
+                input.rows = expanded ? field.rows : 2;
+                // Свёрнутое поле показывает начало текста, а не то место, где его
+                // застала прокрутка: иначе превью открывается с середины слова.
+                if (!expanded) input.scrollTop = 0;
+            }
+            // minHeight здесь именно '0', а не пустая строка: очистка инлайна вернула бы
+            // в силу min-height из style.css (.imaginy-field-prompt — 124px, textarea —
+            // 96px), и свёрнутое поле продолжило бы занимать высоту развёрнутого.
+            applyStyles(wrap, expanded && isTextarea
+                ? { flex: '1 1 auto', minHeight: '84px' }
+                : { flex: '0 0 auto', minHeight: '0' });
+            applyStyles(input, expanded && isTextarea
+                ? { flex: '1 1 auto', minHeight: '60px', height: '' }
+                : isTextarea
+                    ? { flex: '0 0 auto', minHeight: '0', height: 'auto' }
+                    : { flex: '', minHeight: '0', height: '' });
+        }
+
+        // Тело модалки прокручиваемое: если поля всё же не поместились (совсем низкий
+        // экран в альбомной ориентации), развёрнутое поле надо показать целиком. Делаем
+        // это только при смене поля, а не на каждое дрожание вьюпорта.
+        if (expandedKey !== shownKey) {
+            shownKey = expandedKey;
+            try {
+                wraps[expandedKey]?.scrollIntoView?.({ block: 'nearest' });
+            } catch (err) {
+                logWarn('applyLayout: не удалось прокрутить к активному полю', err);
+            }
+        }
+    }
+
+    // События вьюпорта на телефоне приходят пачками (клавиатура выезжает анимацией):
+    // склеиваем их в один пересчёт на кадр, чтобы не грузить слабые устройства.
+    function requestLayout() {
+        if (layoutQueued) return;
+        layoutQueued = true;
+        const run = () => {
+            layoutQueued = false;
+            applyLayout();
+        };
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+        else setTimeout(run, 0);
+    }
 
     // Диагностика «окно вставилось, но его не видно». Консоли на телефоне нет, поэтому
     // измеренная геометрия уходит в тост как есть: по числам сразу видно, схлопнут
@@ -529,6 +796,10 @@ function buildModal({ data, kind, regen }, resolve) {
     }
 
     function cleanup() {
+        vv?.removeEventListener('resize', requestLayout);
+        vv?.removeEventListener('scroll', requestLayout);
+        window.removeEventListener('resize', requestLayout);
+        window.removeEventListener('orientationchange', requestLayout);
         document.removeEventListener('keydown', onKeydown, true);
         overlay.removeEventListener('mousedown', onBackdropMouseDown);
         overlay.remove();

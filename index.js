@@ -10,7 +10,7 @@ import { persistInstruction } from './src/persist.js';
 import { canRegen, requestRegen } from './src/regen.js';
 import { initSrcSync } from './src/srcsync.js';
 
-const VERSION = '0.3.1';
+const VERSION = '0.4.0';
 
 const BUSY_BTN_CLASS = 'imaginy-busy';
 const SPIN_ICON_CLASS = 'fa-solid fa-spinner imaginy-spin';

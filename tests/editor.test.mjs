@@ -555,6 +555,88 @@ const BASE = { prompt: 'a cat', style: 'anime', aspect_ratio: '16:9' };
     check('залипший флаг: промис вырванного окна резолвится в null', await stuck, null);
 }
 
+{
+    // Компактный режим: низкий вьюпорт = телефон со всплывшей клавиатурой. Проверяем
+    // ровно то, что освобождает место под редактируемое поле: короткие подписи кнопок
+    // в один ряд, спрятанная подсказка про Ctrl+Enter и свёрнутые до двух строк соседи.
+    // visualViewport в jsdom нет — заодно проверяется фолбэк на window.innerHeight.
+    const realHeight = dom.window.innerHeight;
+    Object.defineProperty(dom.window, 'innerHeight', { value: 420, configurable: true });
+    setEnv();
+    const p = openEditor({ data: { ...BASE }, kind: 'image', regen: { ok: true } });
+    const overlay = document.querySelector('.imaginy-modal-overlay');
+    const modal = overlay.querySelector('.imaginy-modal');
+    const fields = [...overlay.querySelectorAll('.imaginy-modal-body .imaginy-field')];
+    const prompt = fields[0].querySelector('textarea');
+    const style = fields[1].querySelector('textarea');
+    const buttons = [...overlay.querySelectorAll('.imaginy-modal-footer button')];
+
+    check('компакт: класс на модалке', modal.classList.contains('imaginy-compact'), true);
+    check('компакт: кнопки в ряд', modal.querySelector('.imaginy-modal-footer').style.flexDirection, 'row');
+    check('компакт: подсказка о клавишах спрятана', modal.querySelector('.imaginy-modal-hint').style.display, 'none');
+    checkJson('компакт: короткие подписи', buttons.map((b) => b.textContent), ['Сохранить', 'Сохр. + реген.', 'Отмена']);
+    check('компакт: промпт развёрнут', prompt.rows, 8);
+    check('компакт: стиль свёрнут до двух строк', style.rows, 2);
+
+    // Пользователь тапнул в «Стиль» — высоту забирает он, промпт сворачивается.
+    style.focus();
+    check('компакт: после фокуса стиль развёрнут', style.rows, 3);
+    check('компакт: после фокуса промпт свёрнут', prompt.rows, 2);
+    // Ширина не изменилась, так что кнопки остались короткими — ищем по новой подписи.
+    buttons.find((b) => b.textContent === 'Отмена').click();
+    check('компакт: окно закрывается', await p, null);
+
+    // Средняя ступень: места мало для просторной раскладки, но хватает, чтобы показать
+    // все поля целиком. Обвязка ужимается, поля — нет. Пороги считаются в строках
+    // (16px * 1.35 в jsdom ≈ 21.6): просторно от 30 строк (~648px), приоритет
+    // фокусу — ниже 26 строк (~562px).
+    Object.defineProperty(dom.window, 'innerHeight', { value: 600, configurable: true });
+    setEnv();
+    const mid = openEditor({ data: { ...BASE }, kind: 'image', regen: { ok: true } });
+    const midModal = document.querySelector('.imaginy-modal');
+    const midFields = [...midModal.querySelectorAll('.imaginy-field')];
+    check('средняя ступень: обвязка ужата', midModal.classList.contains('imaginy-compact'), true);
+    check('средняя ступень: промпт не свёрнут', midFields[0].querySelector('textarea').rows, 8);
+    check('средняя ступень: стиль тоже развёрнут', midFields[1].querySelector('textarea').rows, 3);
+    [...midModal.querySelectorAll('.imaginy-modal-footer button')]
+        .find((b) => b.textContent === 'Отмена').click();
+    await mid;
+
+    Object.defineProperty(dom.window, 'innerHeight', { value: realHeight, configurable: true });
+    setEnv();
+    const q = openEditor({ data: { ...BASE }, kind: 'image', regen: { ok: true } });
+    check('обычный режим: полные подписи вернулись', els().saveRegen?.textContent, 'Сохранить и перегенерировать');
+    check('обычный режим: класс компакта снят',
+        document.querySelector('.imaginy-modal').classList.contains('imaginy-compact'), false);
+    els().cancel.click();
+    await q;
+}
+
+{
+    // Сенсорный ввод: фокус в промпт сразу поднял бы клавиатуру и открыл окно уже
+    // наполовину закрытым — даже если человек зашёл только прочитать промпт. На мышке
+    // фокус, наоборот, ставится сразу, и курсор — в начало текста, а не в конец.
+    const realMatchMedia = dom.window.matchMedia;
+    dom.window.matchMedia = (q) => (q === '(pointer: coarse)' ? { matches: true } : realMatchMedia.call(dom.window, q));
+    setEnv();
+    const touch = openEditor({ data: { ...BASE }, kind: 'image', regen: { ok: true } });
+    const touchPrompt = els().prompt;
+    await Promise.resolve();
+    check('сенсорный ввод: фокус не украден', document.activeElement === touchPrompt, false);
+    els().cancel.click();
+    await touch;
+
+    dom.window.matchMedia = realMatchMedia;
+    setEnv();
+    const mouse = openEditor({ data: { prompt: 'длинный промпт' }, kind: 'image', regen: { ok: true } });
+    const mousePrompt = els().prompt;
+    await Promise.resolve();
+    check('мышь: фокус в промпте', document.activeElement === mousePrompt, true);
+    check('мышь: курсор в начале текста', mousePrompt.selectionStart, 0);
+    els().cancel.click();
+    await mouse;
+}
+
 // ── итог ───────────────────────────────────────────────────────────────────────
 Object.assign(console, realConsole);
 
