@@ -22,6 +22,8 @@ text, get a new version.
 - 💾 **The edit lives in the chat** — the prompt is written to every message storage location and
   survives a reload.
 - 🎨 **The style is remembered** across images and chats.
+- 🕓 **Previous prompt versions** — a "Before: …" row with a Restore button under the field.
+- 🌍 **Russian and English** interface.
 - 🔒 **Zero network requests** made by Imaginy itself.
 
 ## Requirements
@@ -102,6 +104,7 @@ intercepts it.
 | Regenerate after saving the prompt | Makes plain "Save" start generation right away |
 | Pin regenerated images | Writes the new image path into every place SillyTavern keeps the message text — otherwise the image may revert to the very first one after a page reload |
 | Remembered style | The last style you used. Shared across all chats and characters; the editor pre-fills it when an image has no style of its own. It does not affect generation by itself. The "Forget" button clears it |
+| Interface language | Russian or English. Defaults to whatever SillyTavern uses; the settings panel switches immediately, the editor on its next open |
 
 ## Limitations
 

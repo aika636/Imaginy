@@ -64,6 +64,7 @@ console.warn = () => {};
 console.error = () => {};
 
 const host = await import(`${SRC}host.js`);
+const { resetLocale } = await import(`${SRC}i18n.js`);
 const { openEditor } = await import(`${SRC}editor.js`);
 
 const results = [];
@@ -83,8 +84,12 @@ function checkJson(name, actual, expected) {
 
 // Пересобирает окружение: настройки хоста (от них зависит детект и подсказки о
 // перекрытии) и настройки самого Imaginy.
-function setEnv({ hostSettings = {}, lastStyle = '' } = {}) {
-    extensionSettings = { ...hostSettings, Imaginy: { lastStyle } };
+function setEnv({ hostSettings = {}, lastStyle = '', language = 'ru' } = {}) {
+    // Язык задаётся явно: без него i18n спрашивает у окружения (в тестах — у Node с его
+    // системной локалью), и подписи в окне зависели бы от машины, на которой запущен
+    // тест. Здесь проверяются русские формулировки — значит, и язык русский.
+    extensionSettings = { ...hostSettings, Imaginy: { lastStyle, language } };
+    resetLocale();
     savedSettings = 0;
     toasts.length = 0;
     host.resetHostDetection();

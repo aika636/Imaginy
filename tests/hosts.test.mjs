@@ -146,7 +146,9 @@ function check(name, actual, expected) {
     decorate.decorateRoot(root2);
     const verdict = regen.canRegen(document.querySelector('img[data-iig-instruction]'), 'image');
     check('0xl0cal: две картинки → отказ', verdict.ok, false);
-    check('0xl0cal: причина про «всё сообщение»', /несколько картинок/.test(verdict.reason), true);
+    // Профиль возвращает ключ локализации, а не текст: переводится он в месте показа
+    // (index.js, editor.js), см. src/i18n.js.
+    check('0xl0cal: причина про «всё сообщение»', verdict.reason, 'regen.multiple');
 }
 
 // ── 0xl0cal после delidgi: ключи обоих в настройках, DOM-улик нет ────────────────

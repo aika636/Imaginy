@@ -1,3 +1,7 @@
+<!-- Тексты продублированы двумя способами: как есть в разметке (русский — язык
+     оригинала, см. src/i18n.js) и ключом в data-i18n. При инициализации панели
+     applyPanelTranslations (src/settings.js) переписывает их переводом для текущего
+     языка. Разметка без скрипта остаётся читаемой, а не набором ключей. -->
 <div class="imaginy-settings">
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
@@ -9,30 +13,30 @@
             <div class="imaginy-row">
                 <label class="checkbox_label" for="imaginy_enabled">
                     <input type="checkbox" id="imaginy_enabled" />
-                    <span>Включить Imaginy</span>
+                    <span data-i18n="settings.enabled">Включить Imaginy</span>
                 </label>
             </div>
 
             <div class="imaginy-row">
                 <label class="checkbox_label" for="imaginy_show_edit_button">
                     <input type="checkbox" id="imaginy_show_edit_button" />
-                    <span>Показывать кнопку-карандаш на изображениях</span>
+                    <span data-i18n="settings.showEditButton">Показывать кнопку-карандаш на изображениях</span>
                 </label>
             </div>
 
             <div class="imaginy-row">
                 <label class="checkbox_label" for="imaginy_regenerate_after_save">
                     <input type="checkbox" id="imaginy_regenerate_after_save" />
-                    <span>Перегенерировать после сохранения промпта</span>
+                    <span data-i18n="settings.regenerateAfterSave">Перегенерировать после сохранения промпта</span>
                 </label>
             </div>
 
             <div class="imaginy-row">
                 <label class="checkbox_label" for="imaginy_sync_image_src">
                     <input type="checkbox" id="imaginy_sync_image_src" />
-                    <span>Закреплять перегенерированные картинки</span>
+                    <span data-i18n="settings.syncImageSrc">Закреплять перегенерированные картинки</span>
                 </label>
-                <small>
+                <small data-i18n="settings.syncImageSrc.hint">
                     Дописывает путь к новой картинке во все места, где SillyTavern хранит текст
                     сообщения. Без этого перегенерированная картинка после перезагрузки страницы
                     может смениться обратно на самую первую.
@@ -40,21 +44,32 @@
             </div>
 
             <div class="imaginy-row imaginy-row-style">
-                <label for="imaginy_last_style">Запомненный стиль</label>
+                <label for="imaginy_last_style" data-i18n="settings.lastStyle">Запомненный стиль</label>
                 <textarea id="imaginy_last_style" class="text_pole" rows="2"></textarea>
-                <button type="button" id="imaginy_forget_style" class="menu_button">Забыть</button>
-                <small>
+                <button type="button" id="imaginy_forget_style" class="menu_button"
+                        data-i18n="settings.lastStyle.forget">Забыть</button>
+                <small data-i18n="settings.lastStyle.hint">
                     Подставляется в редакторе в поле «Стиль», когда у картинки своего стиля нет.
                     Один на все чаты и всех ботов. Сам по себе на генерацию не влияет — только
                     подставляется в редактор.
                 </small>
             </div>
 
-            <div class="imaginy-row">
-                <small>Расширение картинок: <b id="imaginy_host_name">определяется…</b></small>
+            <div class="imaginy-row imaginy-row-language">
+                <label for="imaginy_language" data-i18n="settings.language">Язык интерфейса</label>
+                <select id="imaginy_language" class="text_pole">
+                    <option value="auto" data-i18n="settings.language.auto">Как в SillyTavern</option>
+                    <option value="ru">Русский</option>
+                    <option value="en">English</option>
+                </select>
             </div>
 
-            <small>
+            <div class="imaginy-row">
+                <small><span data-i18n="settings.host">Расширение картинок:</span>
+                    <b id="imaginy_host_name" data-i18n="settings.host.detecting">определяется…</b></small>
+            </div>
+
+            <small data-i18n="settings.about">
                 Imaginy — тонкая надстройка над расширениями инлайн-генерации картинок
                 (SLAY Images, notsosillynotsoimages, sillyimages): позволяет редактировать промпт
                 сгенерированного изображения, кликнув по кнопке-карандашу.

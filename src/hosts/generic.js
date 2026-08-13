@@ -8,11 +8,10 @@
 
 import { ATTR, SEL_IMAGE, SEL_VIDEO, no, safeClosest, targetIsStale, yes } from './common.js';
 
+// Ключи локализации, а не текст — см. комментарий у FALLBACK_REASONS в common.js.
 const REASONS = {
-    noButton:
-        'Кнопка перегенерации не найдена: расширение картинок не опознано. '
-        + 'Промпт сохранён — перегенерируйте штатной кнопкой самого расширения.',
-    stale: 'Изображение уже перерисовано — промпт сохранён, нажмите карандаш заново и перегенерируйте.',
+    noButton: 'regen.noButton.generic',
+    stale: 'regen.stale',
 };
 
 // Порядок = от самой узкой (per-image) кнопки к самой общей. Кнопку в меню сообщения
@@ -26,7 +25,8 @@ const REGEN_BUTTONS = [
 
 export const GENERIC = Object.freeze({
     id: 'generic',
-    name: 'расширение картинок (не опознано)',
+    // Единственное имя хоста, которое переводится: остальные — имена расширений.
+    name: 'host.generic.name',
     settingsModule: 'inline_image_gen',
 
     detect: Object.freeze({ globals: [], dom: [], settingsKeys: [] }),

@@ -9,16 +9,20 @@ import { logError, logInfo, logWarn } from './log.js';
 import { getAspectRatioContext, setAspectRatioFromPrompt, getStyleContext, clearHostStyle } from './hostquirks.js';
 import { getHost } from './host.js';
 import { getSettings, saveSettings, refreshLastStyleField } from './settings.js';
+import { t } from './i18n.js';
 import { VERSION } from './version.js';
 
 // Поля image_size / quality / preset намеренно не редактируются: у активного
 // naistera-пути хост их вообще не отправляет (в теле запроса только
 // prompt/aspect_ratio/model), а у остальных путей это глобальные настройки хоста.
 // Ключи, если они были в инструкции, сохраняются как есть — см. buildResultData.
+// Подписи полей — ключи локализации: сам массив вычисляется один раз при загрузке
+// модуля, а язык к тому моменту может быть ещё не выбран (настройки ST приходят позже).
+// Текст берётся в момент отрисовки окна, ключ строится по имени поля.
 const FIELDS = [
-    { key: 'prompt', label: 'Промпт', kind: 'textarea', rows: 8, autofocus: true },
-    { key: 'style', label: 'Стиль', kind: 'textarea', rows: 3 },
-    { key: 'aspect_ratio', label: 'Соотношение сторон', kind: 'select' },
+    { key: 'prompt', kind: 'textarea', rows: 8, autofocus: true },
+    { key: 'style', kind: 'textarea', rows: 3 },
+    { key: 'aspect_ratio', kind: 'select' },
 ];
 
 // Пороги раскладки заданы в строках текста, а не в пикселях. Пиксель на разных
@@ -170,7 +174,7 @@ export function openEditor({ data, kind, regen, history }) {
     // залипший, и держать пользователя в состоянии «редактор уже открыт» до перезагрузки
     // страницы нельзя.
     if (modalOpen && document.querySelector('.imaginy-modal-overlay')) {
-        toast('info', 'Редактор уже открыт');
+        toast('info', t('toast.editorAlreadyOpen'));
         return Promise.resolve(null);
     }
     if (modalOpen) {
@@ -200,7 +204,7 @@ export function openEditor({ data, kind, regen, history }) {
             pendingSettle = null;
             document.querySelector('.imaginy-modal-overlay')?.remove();
             logError('openEditor: не удалось построить модалку', err);
-            toast('error', `Не удалось открыть редактор: ${err?.message ?? err}`);
+            toast('error', t('toast.editorOpenFailed', { error: err?.message ?? err }));
             resolve(null);
         }
     });
@@ -287,7 +291,11 @@ function buildModal({ data, kind, regen, history }, resolve) {
     header.className = 'imaginy-modal-header';
     // Имя хоста в шапке — не украшение: по нему сразу видно, чьи кнопки и настройки
     // Imaginy считает своими (детект хоста описан в src/host.js).
-    header.textContent = `Редактирование промпта — ${getHost().name}`;
+    // t(host.name) — не описка: имена опознанных хостов («SLAY Images») это имена
+    // собственные, они лежат в профиле как есть и переводу не подлежат, а незнакомый
+    // ключ t() возвращает сам собой. Переводится только имя неопознанного хоста, у
+    // которого в профиле стоит ключ host.generic.name.
+    header.textContent = t('editor.title', { host: t(getHost().name) });
     applyStyles(header, { flex: '0 0 auto', padding: '12px 16px', fontWeight: '600' });
     modal.appendChild(header);
 
@@ -346,14 +354,14 @@ function buildModal({ data, kind, regen, history }, resolve) {
         applyStyles(labelRow, { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' });
 
         const label = document.createElement('label');
-        label.textContent = field.label;
+        label.textContent = t(`editor.field.${field.key}`);
         labelRow.appendChild(label);
 
         if (field.key === 'prompt') {
             copyBtn = document.createElement('button');
             copyBtn.type = 'button';
             copyBtn.className = 'imaginy-copy-btn';
-            copyBtn.textContent = 'Скопировать промпт';
+            copyBtn.textContent = t('editor.copyPrompt');
             labelRow.appendChild(copyBtn);
         }
 
@@ -389,7 +397,7 @@ function buildModal({ data, kind, regen, history }, resolve) {
                 const opt = document.createElement('option');
                 opt.value = value;
                 opt.textContent = value === ''
-                    ? `Не задано (значение возьмёт ${host.name})`
+                    ? t('editor.aspect.unset', { host: t(host.name) })
                     : value;
                 input.appendChild(opt);
             }
@@ -449,15 +457,15 @@ function buildModal({ data, kind, regen, history }, resolve) {
         // (у форков sillyimages это resolveEffectiveStyle; см. src/hostquirks.js).
         if (field.key === 'style' && styleCtx.overridden) {
             wrap.appendChild(createHintRow(
-                `В ${host.name} выбран стиль «${styleCtx.name}» — он перекроет любой стиль, вписанный здесь.`,
+                t('editor.hostStyleOverride', { host: t(host.name), style: styleCtx.name }),
                 {
-                    label: 'Сбросить стиль хоста',
+                    label: t('editor.hostStyleReset'),
                     onClick: (row) => {
                         if (clearHostStyle()) {
                             row.remove();
-                            toast('success', `Глобальный стиль ${host.name} сброшен — теперь применяется стиль из инструкции`);
+                            toast('success', t('toast.hostStyleCleared', { host: t(host.name) }));
                         } else {
-                            toast('error', `Не удалось изменить настройку ${host.name} — сбросьте стиль вручную в его панели`);
+                            toast('error', t('toast.hostStyleClearFailed', { host: t(host.name) }));
                         }
                     },
                 },
@@ -465,8 +473,8 @@ function buildModal({ data, kind, regen, history }, resolve) {
         }
 
         if (styleFromMemory) {
-            wrap.appendChild(createHintRow('Подставлен последний использованный стиль.', {
-                label: 'Забыть',
+            wrap.appendChild(createHintRow(t('editor.styleFromMemory'), {
+                label: t('editor.forget'),
                 onClick: (row) => {
                     input.value = '';
                     dirty = true;
@@ -491,15 +499,15 @@ function buildModal({ data, kind, regen, history }, resolve) {
         // (src/hostquirks.js).
         if (field.key === 'aspect_ratio' && aspectCtx.overridden) {
             wrap.appendChild(createHintRow(
-                `В настройках ${host.name} жёстко задано «${aspectCtx.global}» — это значение перекроет любое выбранное здесь.`,
+                t('editor.hostAspectOverride', { host: t(host.name), value: aspectCtx.global }),
                 {
-                    label: 'Переключить на «Из промпта»',
+                    label: t('editor.hostAspectSwitch'),
                     onClick: (row) => {
                         if (setAspectRatioFromPrompt()) {
                             row.remove();
-                            toast('success', `${host.name} переключён на «Из промпта» — соотношение теперь берётся из инструкции`);
+                            toast('success', t('toast.hostAspectSwitched', { host: t(host.name) }));
                         } else {
-                            toast('error', `Не удалось изменить настройку ${host.name} — переключите вручную в его панели`);
+                            toast('error', t('toast.hostAspectSwitchFailed', { host: t(host.name) }));
                         }
                     },
                 },
@@ -512,7 +520,7 @@ function buildModal({ data, kind, regen, history }, resolve) {
     if (copyBtn) {
         copyBtn.addEventListener('click', async () => {
             const ok = await copyToClipboard(inputs.prompt.value);
-            toast(ok ? 'success' : 'error', ok ? 'Промпт скопирован' : 'Не удалось скопировать промпт');
+            toast(ok ? 'success' : 'error', t(ok ? 'toast.promptCopied' : 'toast.promptCopyFailed'));
         });
     }
 
@@ -534,26 +542,27 @@ function buildModal({ data, kind, regen, history }, resolve) {
     const btnSave = document.createElement('button');
     btnSave.type = 'button';
     btnSave.className = 'menu_button';
-    btnSave.textContent = 'Сохранить';
+    btnSave.textContent = t('editor.save');
 
     const btnSaveRegen = document.createElement('button');
     btnSaveRegen.type = 'button';
     btnSaveRegen.className = 'menu_button';
-    btnSaveRegen.textContent = 'Сохранить и перегенерировать';
+    btnSaveRegen.textContent = t('editor.saveRegen');
 
     const btnCancel = document.createElement('button');
     btnCancel.type = 'button';
     btnCancel.className = 'menu_button';
-    btnCancel.textContent = 'Отмена';
+    btnCancel.textContent = t('editor.cancel');
 
     if (regen && !regen.ok) {
         btnSaveRegen.disabled = true;
-        btnSaveRegen.title = regen.reason;
+        // reason — ключ локализации из профиля хоста (src/hosts/*, src/regen.js).
+        btnSaveRegen.title = t(regen.reason);
     }
 
     const hint = document.createElement('small');
     hint.className = 'imaginy-modal-hint';
-    hint.textContent = `${SAVE_HOTKEY_LABEL} — сохранить, Esc — отмена`;
+    hint.textContent = t('editor.hotkeyHint', { hotkey: SAVE_HOTKEY_LABEL });
     footer.appendChild(hint);
 
     footer.appendChild(btnSave);
@@ -564,9 +573,9 @@ function buildModal({ data, kind, regen, history }, resolve) {
     // о горячих клавишах съедали на телефоне со всплывшей клавиатурой около 190 px —
     // больше, чем оставалось самому промпту.
     const SHORT_LABELS = new Map([
-        [btnSave, 'Сохранить'],
-        [btnSaveRegen, 'Сохр. + реген.'],
-        [btnCancel, 'Отмена'],
+        [btnSave, t('editor.save')],
+        [btnSaveRegen, t('editor.saveRegen.short')],
+        [btnCancel, t('editor.cancel')],
     ]);
     const FULL_LABELS = new Map([...SHORT_LABELS.keys()].map((b) => [b, b.textContent]));
 
@@ -800,24 +809,26 @@ function buildModal({ data, kind, regen, history }, resolve) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'imaginy-copy-btn';
-        btn.textContent = 'Вернуть';
+        btn.textContent = t('editor.history.restore');
 
         // Промпт мог поменяться мимо нас (правка сообщения руками, другой форк, откат
         // файла чата). Честно говорим об этом: тогда «Было» — это то, что мы видели в
         // прошлый раз, а не обязательно предыдущее состояние картинки.
-        const foreignNote = foreign ? 'Промпт меняли не через Imaginy. ' : '';
+        const foreignNote = foreign ? t('editor.history.foreign') : '';
         let cursor = 0;
 
         const render = () => {
             if (cursor >= versions.length) {
-                text.textContent = `${foreignNote}Прошлых версий больше нет.`;
+                text.textContent = `${foreignNote}${t('editor.history.none')}`;
                 row.removeAttribute('title');
                 btn.remove();
                 return;
             }
             const value = versions[cursor];
-            const ordinal = cursor === 0 ? 'Было' : `Ещё раньше (${cursor + 1})`;
-            text.textContent = `${foreignNote}${ordinal}: «${previewOf(value)}»`;
+            const line = cursor === 0
+                ? t('editor.history.was', { preview: previewOf(value) })
+                : t('editor.history.earlier', { step: cursor + 1, preview: previewOf(value) });
+            text.textContent = `${foreignNote}${line}`;
             row.title = value;
         };
 
@@ -829,7 +840,7 @@ function buildModal({ data, kind, regen, history }, resolve) {
             dirty = true;
             cursor++;
             render();
-            toast('info', 'Прошлый промпт подставлен — сохраните, чтобы применить');
+            toast('info', t('toast.historyRestored'));
         });
 
         row.appendChild(text);
@@ -864,7 +875,7 @@ function buildModal({ data, kind, regen, history }, resolve) {
         const collapsed = m.width < 40 || m.height < 40;
         const offscreen = m.bottom < 1 || m.top > window.innerHeight || m.right < 1 || m.left > window.innerWidth;
         if (collapsed || offscreen) {
-            toast('warning', `Редактор v${EDITOR_BUILD} не виден: ${geom}`);
+            toast('warning', t('toast.editorInvisible', { build: EDITOR_BUILD, geometry: geom }));
         }
     } catch (err) {
         logWarn('openEditor: не удалось измерить окно', err);

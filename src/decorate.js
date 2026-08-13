@@ -9,6 +9,7 @@ import { getCtx, getEventTypes, toast } from './ctx.js';
 import { logError, logWarn, warnOnce } from './log.js';
 import { getSettings } from './settings.js';
 import { getHost, isHostPresent } from './host.js';
+import { t } from './i18n.js';
 
 const OWN_WRAP_CLASS = 'imaginy-img-wrap';
 const BTN_CLASS = 'imaginy-edit-btn';
@@ -73,7 +74,7 @@ function makeButton(kind, { errorMod = false } = {}) {
         errorMod ? BTN_CLASS_ERROR : '',
         getHost().btnPlacement === 'top-left' ? BTN_CLASS_TOP_LEFT : '',
     ].filter(Boolean).join(' ');
-    btn.title = 'Редактировать промпт';
+    btn.title = t('decorate.editTitle');
     btn.innerHTML = '<i class="fa-solid fa-pen"></i>';
     btn.addEventListener('click', (e) => {
         // SLAY-лайтбокс — document-level listener с capture:true (docs §2.8). Клик по
@@ -88,12 +89,12 @@ function makeButton(kind, { errorMod = false } = {}) {
             if (maybePromise && typeof maybePromise.catch === 'function') {
                 maybePromise.catch((err) => {
                     logError('onEdit callback упал (async)', err);
-                    toast('error', `Ошибка редактора: ${err?.message ?? err}`);
+                    toast('error', t('toast.editorError', { error: err?.message ?? err }));
                 });
             }
         } catch (err) {
             logError('onEdit callback упал', err);
-            toast('error', `Ошибка редактора: ${err?.message ?? err}`);
+            toast('error', t('toast.editorError', { error: err?.message ?? err }));
         }
     });
     return btn;

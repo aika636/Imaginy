@@ -349,7 +349,46 @@ function fire(id, type) {
     check('refresh: без элемента ничего не создаёт', document.getElementById('imaginy_last_style'), null);
 }
 
-// ── 6. Устойчивость ─────────────────────────────────────────────────────────────
+// ── 6. Язык интерфейса ──────────────────────────────────────────────────────────
+// Панель — единственное место, где язык выбирают руками, и единственное, что
+// перерисовывается сразу: редактор возьмёт новый язык при следующем открытии.
+{
+    reset({});
+    await initSettingsUI(() => {});
+
+    check('язык: по умолчанию «как в SillyTavern»', getSettings().language, 'auto');
+    check('язык: селектор показывает то же', document.getElementById('imaginy_language').value, 'auto');
+
+    const label = () => document.querySelector('[data-i18n="settings.enabled"]').textContent;
+
+    document.getElementById('imaginy_language').value = 'ru';
+    fire('imaginy_language', 'change');
+    check('язык: русский записан в настройки', getSettings().language, 'ru');
+    check('язык: подпись по-русски', label(), 'Включить Imaginy');
+
+    document.getElementById('imaginy_language').value = 'en';
+    fire('imaginy_language', 'change');
+    check('язык: английский записан в настройки', getSettings().language, 'en');
+    check('язык: подпись переведена', label(), 'Enable Imaginy');
+    check('язык: настройки сохранены', savedCount > 0, true);
+
+    // Перевод панели проходит по всем подписям сразу, включая имя хоста — а его
+    // пишет отдельный код, и заглушка «определяется…» не должна остаться на экране.
+    check('язык: имя хоста не затёрто заглушкой',
+        document.getElementById('imaginy_host_name').textContent === 'detecting…', false);
+}
+
+{
+    // Сохранённый язык поднимается в селектор при следующей сборке панели.
+    reset({ Imaginy: { language: 'en' } });
+    await initSettingsUI(() => {});
+    check('язык: селектор восстановлен из настроек',
+        document.getElementById('imaginy_language').value, 'en');
+    check('язык: панель сразу на нужном языке',
+        document.querySelector('[data-i18n="settings.enabled"]').textContent, 'Enable Imaginy');
+}
+
+// ── 7. Устойчивость ─────────────────────────────────────────────────────────────
 {
     // settings.html не загрузился — initSettingsUI обязана вернуться штатно.
     reset({});

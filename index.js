@@ -11,6 +11,7 @@ import { persistInstruction } from './src/persist.js';
 import { canRegen, requestRegen } from './src/regen.js';
 import { initSrcSync } from './src/srcsync.js';
 import { VERSION } from './src/version.js';
+import { t } from './src/i18n.js';
 
 const BUSY_BTN_CLASS = 'imaginy-busy';
 const SPIN_ICON_CLASS = 'fa-solid fa-spinner imaginy-spin';
@@ -25,7 +26,7 @@ async function onEdit(targetEl, kind, btn) {
 
     const instruction = readInstruction(targetEl);
     if (!instruction) {
-        toast('error', 'Не удалось прочитать параметры изображения');
+        toast('error', t('toast.readFailed'));
         return;
     }
 
@@ -58,11 +59,11 @@ async function onEdit(targetEl, kind, btn) {
         });
 
         if (!ok) {
-            toast('error', 'Правка применена только к DOM и не переживёт перезагрузку');
+            toast('error', t('toast.domOnly'));
         } else if (savedToDisk === false) {
-            toast('warning', 'Промпт сохранён, но запись на диск отложена');
+            toast('warning', t('toast.savedDeferred'));
         } else {
-            toast('success', 'Промпт сохранён');
+            toast('success', t('toast.saved'));
         }
         logInfo(`onEdit: persist завершён (ok=${ok}, method=${method}, savedToDisk=${savedToDisk})`);
 
@@ -77,14 +78,15 @@ async function onEdit(targetEl, kind, btn) {
         if (wantsRegen) {
             const regenResult = requestRegen(targetEl, kind);
             if (regenResult.ok) {
-                toast('info', 'Перегенерация запущена');
+                toast('info', t('toast.regenStarted'));
             } else {
-                toast('warning', regenResult.reason);
+                // reason — ключ локализации (src/regen.js, src/hosts/*).
+                toast('warning', t(regenResult.reason));
             }
         }
     } catch (err) {
         logError('onEdit: persistInstruction упал', err);
-        toast('error', 'Не удалось сохранить промпт');
+        toast('error', t('toast.saveFailed'));
     } finally {
         if (btn && icon) {
             icon.className = originalIconClass;

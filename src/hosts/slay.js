@@ -3,14 +3,13 @@
 
 import { ATTR, SEL_IMAGE, SEL_VIDEO, no, regenViaWrapButton } from './common.js';
 
+// Ключи локализации, а не текст — см. комментарий у FALLBACK_REASONS в common.js.
 const REASONS = {
-    video: 'SLAY не добавляет кнопку перегенерации к видео — промпт можно только сохранить.',
-    error:
-        'Кнопка «Попробовать снова» у неудавшейся генерации использует промпт, захваченный в замыкание SLAY, '
-        + 'и не увидит правку. Сохраните промпт и обновите сообщение (свайп или смена чата), после чего повторите генерацию.',
-    noButton: 'Кнопка перегенерации SLAY не найдена — возможно, SLAY отключён. Промпт сохранён.',
-    busy: 'Генерация этого изображения уже идёт — дождитесь её завершения.',
-    stale: 'Изображение уже перерисовано — промпт сохранён, нажмите карандаш заново и перегенерируйте.',
+    video: 'regen.video.slay',
+    error: 'regen.error.slay',
+    noButton: 'regen.noButton.slay',
+    busy: 'regen.busy',
+    stale: 'regen.stale',
 };
 
 export const SLAY = Object.freeze({

@@ -4,6 +4,7 @@
 import { getCtx, toast } from './ctx.js';
 import { logError, logInfo } from './log.js';
 import { getHost } from './host.js';
+import { t, resetLocale, LOCALES } from './i18n.js';
 
 export const MODULE_NAME = 'Imaginy';
 
@@ -19,6 +20,11 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // настройки ST), а не в метаданных чата, поэтому переживает и смену чата, и
     // перезагрузку страницы: редактор подставляет его, когда в инструкции стиля нет.
     lastStyle: '',
+    // Язык интерфейса: 'auto' — как в самой таверне, иначе код из i18n.LOCALES.
+    // Ручной переключатель нужен потому, что язык таверны и язык, на котором человеку
+    // удобно читать расширение, совпадают не всегда — а ещё потому, что getCurrentLocale
+    // есть не во всех версиях ST (см. src/i18n.js).
+    language: 'auto',
 });
 
 // Возвращает живой (не клонированный) объект настроек, создавая его при первом
@@ -97,7 +103,12 @@ export async function initSettingsUI(onSettingsChanged) {
         saveSettings();
     });
 
+    // Язык пересчитываем заново: модуль i18n мог определить его до того, как ST донёс
+    // настройки расширения и свою локаль, и закэшировать преждевременный ответ.
+    resetLocale();
+    applyPanelTranslations();
     bindLastStyle();
+    bindLanguage();
     bindHostName();
 
     logInfo('панель настроек инициализирована');
@@ -137,10 +148,10 @@ function bindLastStyle() {
                 getSettings().lastStyle = '';
                 saveSettings();
                 $lastStyle.val('');
-                toast('success', 'Запомненный стиль забыт');
+                toast('success', t('toast.styleForgotten'));
             } catch (err) {
                 logError('не удалось забыть стиль', err);
-                toast('error', 'Не удалось забыть стиль');
+                toast('error', t('toast.styleForgetFailed'));
             }
         });
     } catch (err) {
@@ -163,22 +174,67 @@ export function refreshLastStyleField() {
     }
 }
 
+// Переписывает подписи панели на текущий язык. В settings.html лежит русский текст
+// (язык оригинала) плюс ключ в data-i18n; здесь текст заменяется переводом. Отдельная
+// функция, а не разовый проход, потому что её же зовёт переключатель языка.
+function applyPanelTranslations() {
+    try {
+        const root = document.querySelector('.imaginy-settings');
+        if (!root) return;
+        for (const el of root.querySelectorAll('[data-i18n]')) {
+            el.textContent = t(el.getAttribute('data-i18n'));
+        }
+    } catch (err) {
+        logError('не удалось перевести панель настроек', err);
+    }
+}
+
+// Переключатель языка. Смена применяется к панели сразу, к редактору — при следующем
+// открытии: перерисовывать открытое окно не за чем, оно живёт секунды.
+function bindLanguage() {
+    try {
+        const $language = $('#imaginy_language');
+        const current = getSettings().language ?? 'auto';
+        $language.val(LOCALES.includes(current) || current === 'auto' ? current : 'auto');
+
+        $language.on('change', function () {
+            try {
+                const s = getSettings();
+                s.language = this.value;
+                saveSettings();
+                resetLocale();
+                applyPanelTranslations();
+                // Имя хоста подписи не имеет — его пишет bindHostName, и перевод панели
+                // только что затёр его ключом-заглушкой «определяется…».
+                renderHostName();
+                logInfo(`язык интерфейса переключён: ${s.language}`);
+            } catch (err) {
+                logError('не удалось переключить язык', err);
+            }
+        });
+    } catch (err) {
+        logError('не удалось привязать переключатель языка', err);
+    }
+}
+
 // Показывает в панели, какое расширение картинок Imaginy считает активным. Детект по
 // DOM уточняется по мере отрисовки картинок (src/host.js), поэтому подпись обновляем
 // не один раз, а несколько — иначе на старте она навсегда застынет на предварительном
 // выводе, сделанном по одним настройкам.
-function bindHostName() {
+function renderHostName() {
     const el = document.getElementById('imaginy_host_name');
     if (!el) return;
+    try {
+        // t(имя) — имена опознанных хостов не переводятся и возвращаются сами собой
+        // (см. src/i18n.js); ключ есть только у неопознанного.
+        el.textContent = t(getHost().name);
+    } catch (err) {
+        el.textContent = t('settings.host.unknown');
+    }
+}
 
-    const render = () => {
-        try {
-            el.textContent = getHost().name;
-        } catch (err) {
-            el.textContent = 'не определено';
-        }
-    };
-
-    render();
-    for (const delay of [2000, 6000, 15000]) setTimeout(render, delay);
+function bindHostName() {
+    if (!document.getElementById('imaginy_host_name')) return;
+    renderHostName();
+    for (const delay of [2000, 6000, 15000]) setTimeout(renderHostName, delay);
 }

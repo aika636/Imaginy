@@ -30,20 +30,17 @@ import {
     ATTR, MESSAGE_REGEN_BTN, SEL_IMAGE, SEL_VIDEO, regenViaMessageButton, regenViaWrapButton,
 } from './common.js';
 
+// Ключи локализации, а не текст — см. комментарий у FALLBACK_REASONS в common.js.
 const COMMON_REASONS = {
-    noButton: 'Кнопка перегенерации не найдена — возможно, расширение картинок отключено. Промпт сохранён.',
-    busy: 'Генерация этого изображения уже идёт — дождитесь её завершения.',
-    stale: 'Изображение уже перерисовано — промпт сохранён, нажмите карандаш заново и перегенерируйте.',
-    multiple:
-        'В этом сообщении несколько картинок, а перегенерация здесь работает только на всё сообщение сразу. '
-        + 'Промпт сохранён — запустите перегенерацию кнопкой в меню сообщения, если готовы обновить все картинки.',
+    noButton: 'regen.noButton',
+    busy: 'regen.busy',
+    stale: 'regen.stale',
+    multiple: 'regen.multiple',
 };
 
 const DELIDGI_REASONS = Object.freeze({
     ...COMMON_REASONS,
-    video:
-        'Видео этот форк не оборачивает и кнопки перегенерации к нему не добавляет. '
-        + 'Промпт сохранён — перегенерируйте через меню сообщения.',
+    video: 'regen.video.delidgi',
 });
 
 export const DELIDGI = Object.freeze({
@@ -101,9 +98,7 @@ export const DELIDGI = Object.freeze({
 
 const L0CAL_REASONS = Object.freeze({
     ...COMMON_REASONS,
-    noButton:
-        'В этом форке нет кнопки перегенерации отдельной картинки, а кнопки «Перегенерировать картинки» '
-        + 'в меню сообщения не нашлось. Промпт сохранён.',
+    noButton: 'regen.noButton.l0cal',
 });
 
 export const L0CAL = Object.freeze({

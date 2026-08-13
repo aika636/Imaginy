@@ -17,7 +17,8 @@ import { logError, logInfo } from './log.js';
 import { getHost } from './host.js';
 import { REFUSAL_NO_BUTTON, regenViaMessageFallback } from './hosts/common.js';
 
-const REASON_UNKNOWN = 'Не удалось определить, можно ли перегенерировать. Промпт сохранён.';
+// Ключ локализации; переводится в месте показа (index.js, editor.js).
+const REASON_UNKNOWN = 'regen.unknown';
 
 // canRegen(targetEl, kind) -> { ok, reason, btn }. reason — русская фраза для
 // пользователя при ok === false, пустая строка при ok === true.
@@ -70,6 +71,6 @@ export function requestRegen(targetEl, kind) {
         return { ok: true, reason: '' };
     } catch (err) {
         logError('requestRegen упал', err);
-        return { ok: false, reason: 'Не удалось запустить перегенерацию. Промпт сохранён.' };
+        return { ok: false, reason: 'regen.failed' };
     }
 }
