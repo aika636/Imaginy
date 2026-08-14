@@ -104,7 +104,10 @@ $.get = async (url) => {
 global.$ = $;
 
 const settings = await import(`${SRC}settings.js`);
-const { MODULE_NAME, DEFAULT_SETTINGS, getSettings, saveSettings, initSettingsUI, refreshLastStyleField } = settings;
+const {
+    MODULE_NAME, DEFAULT_SETTINGS, getSettings, saveSettings, initSettingsUI, refreshLastStyleField,
+    normalizeButtonScale, applyButtonScale, BUTTON_SCALE_MIN, BUTTON_SCALE_MAX,
+} = settings;
 
 const results = [];
 function check(name, actual, expected) {
@@ -250,6 +253,67 @@ function fire(id, type) {
     document.getElementById('imaginy_enabled').checked = false;
     fire('imaginy_enabled', 'change');
     check('initUI без колбэка: изменение применилось', getSettings().enabled, false);
+}
+
+// ── 3a. Размер кнопки-карандаша ─────────────────────────────────────────────────
+// Настройка выражена множителем в CSS-переменной на <html>: карандаши создаются и
+// пересоздаются постоянно, догонять их поштучно нечем.
+{
+    const scaleVar = () => document.documentElement.style.getPropertyValue('--imaginy-btn-scale');
+
+    check('scale: значение по умолчанию', DEFAULT_SETTINGS.buttonScale, 100);
+    check('scale: normalize обрезает снизу', normalizeButtonScale(5), BUTTON_SCALE_MIN);
+    check('scale: normalize обрезает сверху', normalizeButtonScale(9000), BUTTON_SCALE_MAX);
+    check('scale: normalize принимает строку из поля', normalizeButtonScale('150'), 150);
+    check('scale: normalize округляет', normalizeButtonScale(122.4), 122);
+    check('scale: normalize спасает мусор', normalizeButtonScale('нет'), 100);
+    check('scale: normalize спасает undefined', normalizeButtonScale(undefined), 100);
+
+    reset({ [MODULE_NAME]: { buttonScale: 150 } });
+    await initSettingsUI(() => {});
+    const slider = document.getElementById('imaginy_button_scale');
+    check('scale: ползунок восстановлен из настроек', slider.value, '150');
+    check('scale: цифра рядом с подписью', document.getElementById('imaginy_button_scale_value').textContent, '150%');
+    check('scale: множитель применён при сборке панели', scaleVar(), '1.5');
+    check('scale: границы ползунка из модуля', `${slider.min}-${slider.max}`, `${BUTTON_SCALE_MIN}-${BUTTON_SCALE_MAX}`);
+
+    savedCount = 0;
+    slider.value = '200';
+    fire('imaginy_button_scale', 'input');
+    check('scale: движение записано в настройки', getSettings().buttonScale, 200);
+    check('scale: движение сохранено', savedCount, 1);
+    check('scale: множитель обновлён сразу', scaleVar(), '2');
+    check('scale: цифра обновлена', document.getElementById('imaginy_button_scale_value').textContent, '200%');
+
+    // «Как было» возвращает 100% и ползунку, и настройке, и странице.
+    fire('imaginy_button_scale_reset', 'click');
+    check('Как было: настройка сброшена', getSettings().buttonScale, 100);
+    check('Как было: ползунок сброшен', slider.value, '100');
+    check('Как было: множитель сброшен', scaleVar(), '1');
+    check('Как было: цифра сброшена', document.getElementById('imaginy_button_scale_value').textContent, '100%');
+}
+
+{
+    // Значение вне границ (правка руками, другая версия) нормализуется при сборке
+    // панели — иначе сохранённое разошлось бы с тем, что показывает обрезающий ползунок.
+    reset({ [MODULE_NAME]: { buttonScale: 5000 } });
+    await initSettingsUI(() => {});
+    check('scale: значение вне границ нормализовано в настройках', getSettings().buttonScale, BUTTON_SCALE_MAX);
+    check('scale: и в ползунке', document.getElementById('imaginy_button_scale').value, String(BUTTON_SCALE_MAX));
+}
+
+{
+    // applyButtonScale зовётся из index.js до сборки панели — разметки в этот момент нет.
+    reset({ [MODULE_NAME]: { buttonScale: 80 } });
+    document.documentElement.style.removeProperty('--imaginy-btn-scale');
+    let threw = false;
+    try {
+        applyButtonScale();
+    } catch {
+        threw = true;
+    }
+    check('applyButtonScale: без панели не бросает', threw, false);
+    check('applyButtonScale: берёт значение из настроек', document.documentElement.style.getPropertyValue('--imaginy-btn-scale'), '0.8');
 }
 
 // ── 4. Поле «Запомненный стиль» ─────────────────────────────────────────────────

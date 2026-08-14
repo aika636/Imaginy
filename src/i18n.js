@@ -124,6 +124,12 @@ const STRINGS = {
             'Дописывает путь к новой картинке во все места, где SillyTavern хранит текст '
             + 'сообщения. Без этого перегенерированная картинка после перезагрузки страницы '
             + 'может смениться обратно на самую первую.',
+        'settings.buttonScale': 'Размер кнопки-карандаша',
+        'settings.buttonScale.reset': 'Как было',
+        'settings.buttonScale.hint':
+            '100% — обычный размер: на мыши карандаш совпадает по высоте с кнопкой '
+            + 'расширения картинок, на сенсорном экране он крупнее. Настройка меняет оба '
+            + 'размера сразу и применяется мгновенно.',
         'settings.lastStyle': 'Запомненный стиль',
         'settings.lastStyle.forget': 'Забыть',
         'settings.lastStyle.hint':
@@ -235,6 +241,12 @@ const STRINGS = {
         'settings.syncImageSrc.hint':
             'Writes the new image path into every place SillyTavern keeps the message text. '
             + 'Without it a regenerated image may revert to the very first one after a page reload.',
+        'settings.buttonScale': 'Pencil button size',
+        'settings.buttonScale.reset': 'Default',
+        'settings.buttonScale.hint':
+            '100% is the normal size: with a mouse the pencil matches the height of the image '
+            + 'extension button, on a touch screen it is bigger. This changes both sizes at once '
+            + 'and applies instantly.',
         'settings.lastStyle': 'Remembered style',
         'settings.lastStyle.forget': 'Forget',
         'settings.lastStyle.hint':

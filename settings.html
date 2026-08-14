@@ -43,6 +43,23 @@
                 </small>
             </div>
 
+            <!-- Границы и шаг ползунка задаёт src/settings.js (BUTTON_SCALE_*), чтобы
+                 они не разъезжались с нормализацией значения. Здесь — стартовые. -->
+            <div class="imaginy-row imaginy-row-scale">
+                <label for="imaginy_button_scale">
+                    <span data-i18n="settings.buttonScale">Размер кнопки-карандаша</span>
+                    <b id="imaginy_button_scale_value">100%</b>
+                </label>
+                <input type="range" id="imaginy_button_scale" min="60" max="250" step="10" value="100" />
+                <button type="button" id="imaginy_button_scale_reset" class="menu_button"
+                        data-i18n="settings.buttonScale.reset">Как было</button>
+                <small data-i18n="settings.buttonScale.hint">
+                    100% — обычный размер: на мыши карандаш совпадает по высоте с кнопкой
+                    расширения картинок, на сенсорном экране он крупнее. Настройка меняет оба
+                    размера сразу и применяется мгновенно.
+                </small>
+            </div>
+
             <div class="imaginy-row imaginy-row-style">
                 <label for="imaginy_last_style" data-i18n="settings.lastStyle">Запомненный стиль</label>
                 <textarea id="imaginy_last_style" class="text_pole" rows="2"></textarea>

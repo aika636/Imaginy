@@ -2,7 +2,7 @@
 
 import { getCtx, getEventTypes, toast } from './src/ctx.js';
 import { logError, logInfo } from './src/log.js';
-import { initSettingsUI, getSettings } from './src/settings.js';
+import { initSettingsUI, getSettings, applyButtonScale } from './src/settings.js';
 import { initDecoration, setDecorationEnabled } from './src/decorate.js';
 import { readInstruction } from './src/instruction.js';
 import { readHistoryFor } from './src/history.js';
@@ -133,6 +133,10 @@ function initSettingsPanel() {
 
 jQuery(async () => {
     try {
+        // Размер кнопки применяем сразу, не дожидаясь панели настроек: она собирается
+        // только в APP_READY, а карандаши появляются раньше — и первые секунды были бы
+        // нарисованы штатным размером вместо выбранного.
+        applyButtonScale();
         initSettingsPanel();
         initDecoration({ onEdit });
         initSrcSync();

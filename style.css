@@ -14,13 +14,22 @@
 /* Кнопка-карандаш. По умолчанию смещена относительно .iig-regen-btn SLAY (top:8px;
    left:8px; 34x34), чтобы не перекрываться: left:50px = 8 (отступ SLAY) + 34 (её
    ширина) + 8. Форки держат свои кнопки в правом верхнем углу — там карандаш встаёт в
-   левый, см. .imaginy-edit-btn--tl и btnPlacement в профилях (src/hosts/*.js). */
+   левый, см. .imaginy-edit-btn--tl и btnPlacement в профилях (src/hosts/*.js).
+
+   Размер задан не числом, а базой (--imaginy-btn-w/h) на множитель --imaginy-btn-scale,
+   который пишет в <html> панель настроек (src/settings.js, applyButtonScale). База
+   разная на мыши и на сенсоре, а множитель один — «покрупнее» остаётся «покрупнее» и
+   там, и там. Позицию (left:50px) множитель не трогает: слева стоит кнопка хоста своего
+   неизменного размера, и отступ считается от неё, а не от нашей ширины. */
 .imaginy-edit-btn {
+    --imaginy-btn-w: 34px;
+    --imaginy-btn-h: 34px;
     position: absolute;
     top: 8px;
     left: 50px;
-    width: 34px;
-    height: 34px;
+    width: calc(var(--imaginy-btn-w) * var(--imaginy-btn-scale, 1));
+    height: calc(var(--imaginy-btn-h) * var(--imaginy-btn-scale, 1));
+    font-size: calc(1em * var(--imaginy-btn-scale, 1));
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -74,13 +83,14 @@
    Здесь же кнопка растёт до размера под палец: 34x34 унаследованы от кнопки SLAY и на
    десктопе нужны ровно для того, чтобы совпадать с ней по высоте, а на сенсоре в них
    попадает мимо. Ширину держим меньше высоты (42 против 44): по горизонтали рядом
-   стоит кнопка хоста, и расползаться вбок некуда, а вертикаль свободна. */
+   стоит кнопка хоста, и расползаться вбок некуда, а вертикаль свободна. Меняем базу, а
+   не сами width/height: пользовательский множитель должен применяться и здесь. */
 @media (hover: none) {
     .imaginy-edit-btn {
+        --imaginy-btn-w: 42px;
+        --imaginy-btn-h: 44px;
         opacity: 0.55;
-        width: 42px;
-        height: 44px;
-        font-size: 1.05em;
+        font-size: calc(1.05em * var(--imaginy-btn-scale, 1));
     }
 
     .imaginy-edit-btn:active {
@@ -115,6 +125,26 @@
    src/decorate.js (decorateErrorPlaceholder). */
 .iig-error-placeholder:has(.imaginy-edit-btn) {
     position: relative;
+}
+
+/* Ряд «Размер кнопки-карандаша» (settings.html). Ползунок без width занимает свою
+   дефолтную ширину в ~130px и не совпадает по краю с остальной панелью. */
+.imaginy-row-scale input[type="range"] {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 4px 0;
+}
+
+.imaginy-row-scale .menu_button {
+    margin: 0 0 4px;
+}
+
+/* Цифра рядом с подписью: моноширинный шрифт держит ширину неизменной, иначе подпись
+   дёргается на каждом шаге ползунка (100% против 90%). */
+#imaginy_button_scale_value {
+    margin-left: 6px;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
 }
 
 /* Ряд «Запомненный стиль» в панели настроек (settings.html). Textarea по умолчанию

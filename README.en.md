@@ -103,6 +103,7 @@ intercepts it.
 | Show the pencil button on images | Hides the pencil while keeping the extension active |
 | Regenerate after saving the prompt | Makes plain "Save" start generation right away |
 | Pin regenerated images | Writes the new image path into every place SillyTavern keeps the message text — otherwise the image may revert to the very first one after a page reload |
+| Pencil button size | A slider from 60% to 250% of the normal size. 100% is what it always was: with a mouse the pencil matches the height of the image extension button, on a touch screen it is bigger. The setting scales both at once and applies instantly |
 | Remembered style | The last style you used. Shared across all chats and characters; the editor pre-fills it when an image has no style of its own. It does not affect generation by itself. The "Forget" button clears it |
 | Interface language | Russian or English. Defaults to whatever SillyTavern uses; the settings panel switches immediately, the editor on its next open |
 

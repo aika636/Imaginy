@@ -20,6 +20,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // настройки ST), а не в метаданных чата, поэтому переживает и смену чата, и
     // перезагрузку страницы: редактор подставляет его, когда в инструкции стиля нет.
     lastStyle: '',
+    // Размер кнопки-карандаша в процентах от штатного (34x34 на мыши, 42x44 на
+    // сенсоре — см. style.css). Не абсолютный размер в пикселях именно потому, что баз
+    // две: одно и то же «покрупнее» должно работать и с мышью, и с пальцем.
+    buttonScale: 100,
     // Язык интерфейса: 'auto' — как в самой таверне, иначе код из i18n.LOCALES.
     // Ручной переключатель нужен потому, что язык таверны и язык, на котором человеку
     // удобно читать расширение, совпадают не всегда — а ещё потому, что getCurrentLocale
@@ -42,6 +46,35 @@ export function getSettings() {
         }
     }
     return settings;
+}
+
+// Границы ползунка размера кнопки. Меньше 60% карандаш перестаёт быть целью для пальца,
+// больше 250% он закрывает собой картинку — обе крайности хуже, чем отсутствие настройки.
+export const BUTTON_SCALE_MIN = 60;
+export const BUTTON_SCALE_MAX = 250;
+export const BUTTON_SCALE_STEP = 10;
+
+// Проценты -> число в допустимых границах. Мусор (строка из поля, undefined из старых
+// настроек, NaN) превращается в 100: кнопка обязана остаться видимой при любом входе.
+export function normalizeButtonScale(value) {
+    const num = Math.round(Number(value));
+    if (!Number.isFinite(num)) return DEFAULT_SETTINGS.buttonScale;
+    return Math.min(BUTTON_SCALE_MAX, Math.max(BUTTON_SCALE_MIN, num));
+}
+
+// Кладёт множитель в <html> — style.css считает от него размер кнопки (--imaginy-btn-scale).
+// Через CSS-переменную, а не через стиль на каждой кнопке: карандаши создаются и
+// пересоздаются постоянно (src/decorate.js), и догонять их всех при смене настройки
+// пришлось бы вручную. Зовётся на старте (index.js) и при каждом движении ползунка.
+export function applyButtonScale(scale) {
+    try {
+        // getSettings() зовём внутри try, а не в значении параметра по умолчанию: он
+        // вычисляется до тела функции, и падение SillyTavern.getContext() ушло бы наружу.
+        const percent = normalizeButtonScale(scale === undefined ? getSettings().buttonScale : scale);
+        document.documentElement.style.setProperty('--imaginy-btn-scale', String(percent / 100));
+    } catch (err) {
+        logError('не удалось применить размер кнопки', err);
+    }
 }
 
 export function saveSettings() {
@@ -107,11 +140,70 @@ export async function initSettingsUI(onSettingsChanged) {
     // настройки расширения и свою локаль, и закэшировать преждевременный ответ.
     resetLocale();
     applyPanelTranslations();
+    bindButtonScale();
     bindLastStyle();
     bindLanguage();
     bindHostName();
 
     logInfo('панель настроек инициализирована');
+}
+
+// Ползунок «Размер кнопки». Применяется сразу, на живых карандашах: настройка про
+// внешний вид, и увидеть результат нужно, не закрывая панель. Значение сохраняем на
+// каждое движение — saveSettings дебаунсится самой таверной.
+function bindButtonScale() {
+    try {
+        const $scale = $('#imaginy_button_scale');
+        const el = document.getElementById('imaginy_button_scale');
+        if (el) {
+            el.min = String(BUTTON_SCALE_MIN);
+            el.max = String(BUTTON_SCALE_MAX);
+            el.step = String(BUTTON_SCALE_STEP);
+        }
+
+        // Нормализуем и записываем обратно: в настройках могло лежать значение вне
+        // границ (правка руками, другая версия) — ползунок обрежет его молча, и
+        // сохранённое разошлось бы с показанным.
+        const current = normalizeButtonScale(getSettings().buttonScale);
+        getSettings().buttonScale = current;
+        $scale.val(String(current));
+        renderButtonScaleValue(current);
+        applyButtonScale(current);
+
+        $scale.on('input', function () {
+            try {
+                const value = normalizeButtonScale(this.value);
+                getSettings().buttonScale = value;
+                saveSettings();
+                renderButtonScaleValue(value);
+                applyButtonScale(value);
+            } catch (err) {
+                logError('не удалось изменить размер кнопки', err);
+            }
+        });
+
+        $('#imaginy_button_scale_reset').on('click', function () {
+            try {
+                const value = DEFAULT_SETTINGS.buttonScale;
+                getSettings().buttonScale = value;
+                saveSettings();
+                $scale.val(String(value));
+                renderButtonScaleValue(value);
+                applyButtonScale(value);
+            } catch (err) {
+                logError('не удалось вернуть размер кнопки по умолчанию', err);
+            }
+        });
+    } catch (err) {
+        logError('не удалось привязать ползунок размера кнопки', err);
+    }
+}
+
+// Цифра рядом с ползунком: без неё «где-то посередине» ничем не отличается от
+// «где-то посередине», и вернуться к прежнему значению на глаз невозможно.
+function renderButtonScaleValue(percent) {
+    const el = document.getElementById('imaginy_button_scale_value');
+    if (el) el.textContent = `${percent}%`;
 }
 
 // Поле «Запомненный стиль»: тот же lastStyle, что подставляет редактор, только
