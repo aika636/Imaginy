@@ -45,7 +45,7 @@ export const SLAY = Object.freeze({
     btnPlacement: 'beside-host',
 
     // Ключ slay_image_gen переживает переход на любой из форков (src/host.js, п.2), а
-    // 0xl0cal своих DOM-улик не оставляет — если кнопки SLAY на месте нет, пробуем
+    // 0xl0cal до 2.0 своих DOM-улик не оставляет — если кнопки SLAY на месте нет, пробуем
     // кнопку меню сообщения (src/regen.js).
     messageRegenFallback: true,
 

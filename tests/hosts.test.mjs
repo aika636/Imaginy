@@ -1,5 +1,5 @@
 // Смоук-тест host-профилей Imaginy под jsdom: детект хоста, расстановка карандаша,
-// вердикт canRegen для каждого из четырёх поддерживаемых расширений.
+// вердикт canRegen для каждого из поддерживаемых расширений.
 //
 // Запуск из корня репозитория:
 //   npm install --no-save jsdom
@@ -129,21 +129,57 @@ function check(name, actual, expected) {
     check('nsnsi: стиль не перекрывается', quirks.getStyleContext().overridden, false);
 }
 
-// ── 0xl0cal/sillyimages ─────────────────────────────────────────────────────────
+// ── 0xl0cal/sillyimages 2.0 и его форк sillywardrobe ───────────────────────────
+{
+    extensionSettings = { inline_image_gen: { additionalReferences: [], characterReferenceLibrary: [], styles: [], activeStyleId: '' } };
+    const actions = (error) => `<div class="iig-img-actions" data-iig-error="${error ? 1 : 0}">${error
+        ? '<button class="iig-img-action iig-img-retry"></button>'
+        : '<button class="iig-img-action iig-img-download"></button><button class="iig-img-action iig-img-regen"></button>'}</div>`;
+    const root = mes(`
+        <span class="iig-img-host"><img class="iig-generated-image" data-iig-instruction='${INSTR}' src="/a.png">${actions(false)}</span>
+        <span class="iig-img-host"><img class="iig-generated-image" data-iig-instruction='${INSTR}' src="/b.png">${actions(false)}</span>
+        <span class="iig-img-host"><img class="iig-error-image" data-iig-instruction='${INSTR}' src="/error.svg">${actions(true)}</span>`);
+    const { host, decorate, regen } = await freshModules();
+    check('0xl0cal-2.0: детект по разметке', host.getHost().id, 'sillyimages-0xl0cal');
+    decorate.decorateRoot(root);
+    check('0xl0cal-2.0: карандаш в .iig-img-host', document.querySelectorAll('.iig-img-host > .imaginy-edit-btn').length, 3);
+    // Кнопка «скачать» sillywardrobe ищет картинку через `:scope > img` — между обёрткой
+    // хоста и картинкой не должно быть ничего нашего.
+    check('0xl0cal-2.0: своей обёртки нет', document.querySelectorAll('.imaginy-img-wrap').length, 0);
+    check('0xl0cal-2.0: картинка — прямой потомок обёртки', document.querySelectorAll('.iig-img-host > img[data-iig-instruction]').length, 3);
+
+    const [img] = document.querySelectorAll('img.iig-generated-image');
+    const verdict = regen.canRegen(img, 'image');
+    check('0xl0cal-2.0: regen одной картинки при двух в сообщении', verdict.ok, true);
+    check('0xl0cal-2.0: кнопка — .iig-img-regen своей обёртки', verdict.btn === img.parentElement.querySelector('.iig-img-regen'), true);
+    const errVerdict = regen.canRegen(document.querySelector('img.iig-error-image'), 'error');
+    check('0xl0cal-2.0: regen упавшей через .iig-img-retry', errVerdict.btn?.classList.contains('iig-img-retry'), true);
+
+    // Хост перегенерирует: картинка подменяется плашкой загрузки и выпадает из документа.
+    img.replaceWith(document.createElement('div'));
+    check('0xl0cal-2.0: отцепленная картинка → отказ', regen.canRegen(img, 'image').ok, false);
+
+    check('0xl0cal-2.0: без активного пресета стиль не перекрыт', quirks.getStyleContext().overridden, false);
+}
+
+// ── 0xl0cal/sillyimages до 2.0: без обёртки и без per-image кнопки ─────────────────
 {
     extensionSettings = { inline_image_gen: { additionalReferences: [], styles: [], activeStyleId: '', aspectRatio: '3:2' } };
     const root = mes(`<img class="iig-generated-image" data-iig-instruction='${INSTR}' src="/a.png">`);
     const { host, decorate, regen } = await freshModules();
     check('0xl0cal: детект', host.getHost().id, 'sillyimages-0xl0cal');
     decorate.decorateRoot(root);
-    check('0xl0cal: своя обёртка сразу', !!document.querySelector('.imaginy-img-wrap > .imaginy-edit-btn'), true);
+    // Обёртку ждём OWN_WRAP_DELAY_MS (её мог бы поставить 2.0), потом делаем свою.
+    check('0xl0cal: сразу карандаша нет', !!document.querySelector('.imaginy-edit-btn'), false);
+    document.querySelector('img[data-iig-instruction]').dataset.imaginySeen = String(Date.now() - 5000);
+    decorate.decorateRoot(root);
+    check('0xl0cal: своя обёртка после ожидания', !!document.querySelector('.imaginy-img-wrap > .imaginy-edit-btn'), true);
     check('0xl0cal: regen через кнопку сообщения', regen.canRegen(document.querySelector('img[data-iig-instruction]'), 'image').ok, true);
 
     // Две картинки в сообщении — кнопка сообщения перегенерирует обе, отказываемся.
     const root2 = mes(`
         <img data-iig-instruction='${INSTR}' src="/a.png">
         <img data-iig-instruction='${INSTR}' src="/b.png">`);
-    decorate.decorateRoot(root2);
     const verdict = regen.canRegen(document.querySelector('img[data-iig-instruction]'), 'image');
     check('0xl0cal: две картинки → отказ', verdict.ok, false);
     // Профиль возвращает ключ локализации, а не текст: переводится он в месте показа

@@ -7,7 +7,7 @@ import { initDecoration, setDecorationEnabled } from './src/decorate.js';
 import { readInstruction } from './src/instruction.js';
 import { readHistoryFor } from './src/history.js';
 import { openEditor } from './src/editor.js';
-import { persistInstruction } from './src/persist.js';
+import { captureTarget, persistInstruction, resolveLiveTarget } from './src/persist.js';
 import { canRegen, requestRegen } from './src/regen.js';
 import { initSrcSync } from './src/srcsync.js';
 import { VERSION } from './src/version.js';
@@ -32,8 +32,13 @@ async function onEdit(targetEl, kind, btn) {
 
     const regen = canRegen(targetEl, kind);
     const history = readHistoryFor(targetEl, instruction.data?.prompt);
+    const where = captureTarget(targetEl);
     const result = await openEditor({ data: instruction.data, kind, regen, history });
     if (!result) return; // отменено пользователем
+
+    // Пока было открыто окно, сообщение могли перерисовать (на телефоне окно висит
+    // долго): тогда пишем и перегенерируем уже живую картинку на том же месте.
+    targetEl = resolveLiveTarget(targetEl, where, instruction.data) ?? targetEl;
 
     editInFlight = true;
 
@@ -56,6 +61,7 @@ async function onEdit(targetEl, kind, btn) {
             // промпт для истории. Читать её заново нельзя — атрибут в DOM к этому
             // моменту уже мог быть переписан.
             prevData: instruction.data,
+            where,
         });
 
         if (!ok) {

@@ -18,7 +18,7 @@ text, get a new version.
 
 - ✏️ **A pencil button next to the image** — opens a dialog with prompt, style and aspect ratio.
 - 🔁 **"Save and regenerate"** — a new image from the new text, no manual re-run.
-- 🧩 **Four host extensions** — SLAY Images and its three forks are detected automatically.
+- 🧩 **A family of host extensions** — SLAY Images and its forks are detected automatically.
 - 💾 **The edit lives in the chat** — the prompt is written to every message storage location and
   survives a reload.
 - 🎨 **The style is remembered** across images and chats.
@@ -36,9 +36,10 @@ extensions must already be installed:
 | [SLAY Images](https://github.com/wewwaistyping/SLAYimages) | yes (except failed generations and videos) |
 | [delidgi/sillyimages](https://github.com/delidgi/sillyimages) | yes, including failed generations |
 | [aceeenvw/notsosillynotsoimages](https://github.com/aceeenvw/notsosillynotsoimages) | yes (except failed generations) |
-| [0xl0cal/sillyimages](https://github.com/0xl0cal/sillyimages) | only if the message contains a single image |
+| [0xl0cal/sillyimages](https://github.com/0xl0cal/sillyimages) 2.0 and its forks (e.g. [sillywardrobe](https://github.com/niemandswasser/sillywardrobe3-0)) | yes, including failed generations (except videos) |
+| 0xl0cal/sillyimages before 2.0 | only if the message contains a single image |
 
-Editing and saving the prompt works with all four. What differs is whether Imaginy can press the
+Editing and saving the prompt works with all of them. What differs is whether Imaginy can press the
 regenerate button itself; when it can't, it says so honestly instead of pretending it worked.
 
 One such extension is enough — don't keep two installed at once, they conflict with each other.
@@ -151,7 +152,8 @@ itself. Thanks to the authors of the host extensions:
   generation machinery;
 - [**delidgi/sillyimages**](https://github.com/delidgi/sillyimages) — delidgi;
 - [**aceeenvw/notsosillynotsoimages**](https://github.com/aceeenvw/notsosillynotsoimages) — aceeenvw;
-- [**0xl0cal/sillyimages**](https://github.com/0xl0cal/sillyimages) — 0xl0cal.
+- [**0xl0cal/sillyimages**](https://github.com/0xl0cal/sillyimages) — 0xl0cal;
+- [**sillywardrobe**](https://github.com/niemandswasser/sillywardrobe3-0) — niemandswasser.
 
 Imaginy neither forks nor patches their code: it only reads and writes their generation-parameters
 attribute and clicks their own regenerate button.

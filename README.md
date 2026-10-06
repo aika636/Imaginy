@@ -18,7 +18,7 @@
 
 - ✏️ **Карандаш рядом с картинкой** — открывает окно с промптом, стилем и соотношением сторон.
 - 🔁 **«Сохранить и перегенерировать»** — новая картинка по новому тексту, без ручного перезапуска.
-- 🧩 **Четыре расширения-хоста** — SLAY Images и три его форка распознаются автоматически.
+- 🧩 **Семейство расширений-хостов** — SLAY Images и его форки распознаются автоматически.
 - 💾 **Правка живёт в чате** — промпт записывается во все места хранения сообщения и переживает
   перезагрузку.
 - 🎨 **Стиль запоминается** между картинками и чатами.
@@ -36,9 +36,10 @@ Imaginy — надстройка, сам он картинки не генери
 | [SLAY Images](https://github.com/wewwaistyping/SLAYimages) | да (кроме упавших генераций и видео) |
 | [delidgi/sillyimages](https://github.com/delidgi/sillyimages) | да, включая упавшие генерации |
 | [aceeenvw/notsosillynotsoimages](https://github.com/aceeenvw/notsosillynotsoimages) | да (кроме упавших генераций) |
-| [0xl0cal/sillyimages](https://github.com/0xl0cal/sillyimages) | только если в сообщении одна картинка |
+| [0xl0cal/sillyimages](https://github.com/0xl0cal/sillyimages) 2.0 и его форки (например [sillywardrobe](https://github.com/niemandswasser/sillywardrobe3-0)) | да, включая упавшие генерации (кроме видео) |
+| 0xl0cal/sillyimages до 2.0 | только если в сообщении одна картинка |
 
-Правка и сохранение промпта работают со всеми четырьмя. Различается только то, может ли Imaginy сам
+Правка и сохранение промпта работают со всеми. Различается только то, может ли Imaginy сам
 нажать кнопку перегенерации; если не может — он честно скажет об этом, а не сделает вид, что сработало.
 
 Достаточно одного такого расширения — держать два одновременно не стоит, они конфликтуют между собой.
@@ -151,7 +152,8 @@ Imaginy существует только потому, что кто-то др�
   предок всего семейства, формат `data-iig-instruction` и вся механика инлайн-генерации;
 - [**delidgi/sillyimages**](https://github.com/delidgi/sillyimages) — delidgi;
 - [**aceeenvw/notsosillynotsoimages**](https://github.com/aceeenvw/notsosillynotsoimages) — aceeenvw;
-- [**0xl0cal/sillyimages**](https://github.com/0xl0cal/sillyimages) — 0xl0cal.
+- [**0xl0cal/sillyimages**](https://github.com/0xl0cal/sillyimages) — 0xl0cal;
+- [**sillywardrobe**](https://github.com/niemandswasser/sillywardrobe3-0) — niemandswasser.
 
 Imaginy не форкает и не патчит их код: он лишь читает и пишет их атрибут с параметрами генерации и
 нажимает их собственную кнопку перегенерации.

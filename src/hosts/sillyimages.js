@@ -16,18 +16,29 @@
 //   10919        настройка imgActionRegen может СПРЯТАТЬ кнопку (класс iig-btn-no-regen
 //                на <body>), но из DOM она не исчезает — программный click() работает
 //
-// 0xl0cal/sillyimages, проверено по index.js@master (июнь 2026):
-//   картинку не оборачивает вообще (нет ни .iig-image-wrapper, ни .iig-img-wrap) и
-//   per-image кнопки перегенерации не имеет: единственная кнопка —
-//   3275-3292  addRegenerateButton() → .iig-regenerate-btn в меню сообщения,
-//   3141-3160  regenerateMessageImages() перегенерирует ВСЕ теги сообщения из его текста.
-//   Поэтому здесь Imaginy делает свою обёртку под карандаш, а «Сохранить и
-//   перегенерировать» разрешает только когда картинка в сообщении одна.
-//   738-745 / 526-531  applyConfiguredStyleToTag/resolveEffectiveStyle — активный пресет
-//   стиля так же перекрывает per-image style.
+// 0xl0cal/sillyimages 2.0, проверено по src/*.js@master (октябрь 2026), и его форк
+// niemandswasser/sillywardrobe3-0 (1.726, master@b544ced) — разметка у них одна:
+//   src/imageActions.js  attachActions() заворачивает каждую img[data-iig-instruction] в
+//                        span.iig-img-host, рядом кладёт div.iig-img-actions с кнопками
+//                        .iig-img-download и .iig-img-regen (у упавшей — .iig-img-retry).
+//                        Видео не оборачивает (селектор только img).
+//   src/imageActions.js  у sillywardrobe «скачать» ищет картинку как ПРЯМОГО потомка
+//                        обёртки (`:scope > img[data-iig-instruction]`), иначе берёт ту, что
+//                        была при постройке кнопок. Своя обёртка Imaginy между ними ломала
+//                        этот поиск: после перегенерации скачивалась самая первая версия.
+//                        Поэтому карандаш кладём прямо в .iig-img-host.
+//   src/pipeline.js      regenerateSingleTag() — промпт берёт из ТЕКСТА сообщения, то есть
+//                        правку через persist.js видит; за «Повторить» у упавшей — она же.
+//   src/parser.js        applyConfiguredStyleToTag/resolveEffectiveStyle — активный пресет
+//                        стиля перекрывает per-image style.
+//
+// 0xl0cal до 2.0 (index.js@master, июнь 2026) картинку не оборачивал вовсе и per-image
+// кнопки не имел: только .iig-regenerate-btn в меню сообщения, которая перегенерирует ВСЕ
+// теги сообщения. На таких установках обёртки .iig-img-host нет — карандаш встаёт в свою
+// обёртку, а «Сохранить и перегенерировать» разрешено, только когда картинка одна.
 
 import {
-    ATTR, MESSAGE_REGEN_BTN, SEL_IMAGE, SEL_VIDEO, regenViaMessageButton, regenViaWrapButton,
+    ATTR, MESSAGE_REGEN_BTN, SEL_IMAGE, SEL_VIDEO, regenViaMessageButton, regenViaWrapButton, safeClosest,
 } from './common.js';
 
 // Ключи локализации, а не текст — см. комментарий у FALLBACK_REASONS в common.js.
@@ -108,26 +119,26 @@ export const L0CAL = Object.freeze({
 
     detect: Object.freeze({
         globals: [],
-        // Уникальных DOM-следов у этого форка нет (он ничего не оборачивает и не рисует
-        // своих кнопок у картинки) — детект идёт по ключам настроек.
-        dom: [],
-        settingsKeys: ['additionalReferences'],
+        // До 2.0 DOM-следов не было вовсе — тогда детект идёт по ключам настроек.
+        dom: ['.iig-img-host', '.iig-img-actions', '.iig-img-regen'],
+        settingsKeys: ['additionalReferences', 'characterReferenceLibrary'],
     }),
 
     selectors: Object.freeze({
         image: SEL_IMAGE,
         video: SEL_VIDEO,
-        // Хост не оборачивает картинку — обёртку под карандаш делаем сами, сразу.
-        imageWrap: null,
+        imageWrap: '.iig-img-host',
         errorTarget: `img.iig-error-image[${ATTR}]`,
         imageSkipMatch: ['.iig-error-image'],
         imageSkipAncestor: [],
     }),
 
+    // Обёртку 2.0 ставит синхронно из своего MutationObserver, так что к нашему
+    // отложенному обходу она уже есть. Не появилась (версия до 2.0) — делаем свою.
     ownWrapFallback: true,
     btnPlacement: 'top-left',
 
-    // Фолбэк здесь бессмысленен: кнопка меню сообщения — и есть основной путь профиля.
+    // Кнопка меню сообщения — основной путь для версии до 2.0, её профиль пробует сам.
     messageRegenFallback: false,
 
     quirks: Object.freeze({
@@ -136,8 +147,19 @@ export const L0CAL = Object.freeze({
     }),
 
     findRegen(targetEl, kind) {
-        // Единственный путь — кнопка в меню сообщения, и она перегенерирует всё
-        // сообщение: разрешаем только когда цель в сообщении одна.
+        if (safeClosest(targetEl, '.iig-img-host')) {
+            return regenViaWrapButton(targetEl, {
+                wrapSelector: '.iig-img-host',
+                btnSelector: kind === 'error' ? '.iig-img-retry' : '.iig-img-regen',
+                // Класса занятости нет: на время генерации картинка подменяется на
+                // .iig-loading-placeholder, это ловит targetIsStale().
+                busyClass: '',
+                reasons: L0CAL_REASONS,
+            });
+        }
+
+        // Версия до 2.0 или видео (его 2.0 не оборачивает): единственный путь — кнопка
+        // в меню сообщения, и она перегенерирует всё сообщение.
         return regenViaMessageButton(targetEl, {
             btnSelector: MESSAGE_REGEN_BTN,
             reasons: L0CAL_REASONS,

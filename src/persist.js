@@ -3,7 +3,9 @@
 
 import { getCtx } from './ctx.js';
 import { logInfo, logWarn } from './log.js';
-import { escapeForText, serializeForDom, serializeForText } from './instruction.js';
+import {
+    decodeEntities, decodeNumericEntities, escapeForText, serializeForDom, serializeForText,
+} from './instruction.js';
 import { imageIndexOf, recordHistory } from './history.js';
 
 // Обходит все места, где хост хранит текст сообщения — «пять мест» в его терминах,
@@ -109,6 +111,20 @@ export function extractJsonSpan(text, jsonStart) {
     return jsonEnd; // -1, если не нашли
 }
 
+// Какой кусок строки заменить, чтобы переписать значение атрибута, и чем. textAfter
+// рассчитан на одинарные кавычки (serializeForText), а модель или хост могли записать
+// атрибут в двойных (`="{&quot;prompt&quot;: …}"`) или вовсе без кавычек — тогда
+// заменить один JSON значит оставить `"` нового JSON внутри `"…"` и сломать разметку.
+// Поэтому значение переписывается целиком, вместе с кавычками, в одинарные.
+function valueSplice(str, valueStart, jsonStart, jsonEnd, textAfter) {
+    const quote = str[valueStart];
+    if ((quote === "'" || quote === '"') && jsonStart === valueStart + 1 && str[jsonEnd] === quote) {
+        return { from: valueStart, to: jsonEnd + 1, text: `'${textAfter}'` };
+    }
+    if (jsonStart === valueStart) return { from: jsonStart, to: jsonEnd, text: `'${textAfter}'` };
+    return { from: jsonStart, to: jsonEnd, text: textAfter };
+}
+
 // Верхняя граница числа замен в одной строке. Реально в сообщении единицы картинок,
 // так что предел недостижим; он существует только как последний предохранитель от
 // зацикливания — цена ошибки здесь не «не сохранилось», а намертво повешенная вкладка
@@ -168,10 +184,8 @@ function anchoredReplace(str, src, textAfter) {
             continue;
         }
 
-        const jsonStart = tagStart + jsonStartInTag;
-        const jsonEnd = tagStart + jsonEndInTag;
-
-        result = result.slice(0, jsonStart) + textAfter + result.slice(jsonEnd);
+        const cut = valueSplice(tagSlice, attrValueStartInTag, jsonStartInTag, jsonEndInTag, textAfter);
+        result = result.slice(0, tagStart + cut.from) + cut.text + result.slice(tagStart + cut.to);
         hits++;
 
         // Продолжаем поиск ЗА концом только что переписанного тега, а не за концом
@@ -182,10 +196,77 @@ function anchoredReplace(str, src, textAfter) {
         // же атрибут тем же значением — и так вечно: главный поток вставал намертво, и
         // таверну приходилось закрывать. Max с текущей позицией гарантирует, что курсор
         // всегда двигается вперёд, даже если новый JSON сильно короче старого.
-        const tagLengthAfter = tagSlice.length + textAfter.length - (jsonEndInTag - jsonStartInTag);
+        const tagLengthAfter = tagSlice.length + cut.text.length - (cut.to - cut.from);
         searchFrom = Math.max(searchFrom + 1, tagStart + tagLengthAfter);
     }
 
+    return { result, hits };
+}
+
+// Разбирает JSON инструкции так же, как это делают хост и readInstruction: снятие
+// HTML-энтити, фолбэк на одинарные кавычки, числовые энтити — только в значениях.
+// Возвращает объект или null.
+function parseInstructionJson(raw) {
+    const decoded = decodeEntities(raw);
+    let data;
+    try {
+        data = JSON.parse(decoded);
+    } catch (err) {
+        try {
+            data = JSON.parse(decoded.replace(/'/g, '"'));
+        } catch (err2) {
+            return null;
+        }
+    }
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) return null;
+    for (const key of Object.keys(data)) {
+        if (typeof data[key] === 'string') data[key] = decodeNumericEntities(data[key]);
+    }
+    return data;
+}
+
+// Та же инструкция по смыслу: те же ключи с теми же значениями. Форма записи (порядок
+// ключей, пробелы, способ экранирования кавычек и кириллицы) не важна.
+function sameInstruction(a, b) {
+    if (!a || !b) return false;
+    const keys = Object.keys(a);
+    if (keys.length !== Object.keys(b).length) return false;
+    return keys.every((key) => Object.hasOwn(b, key) && JSON.stringify(a[key]) === JSON.stringify(b[key]));
+}
+
+// Совпадает ли значение атрибута data-iig-instruction с инструкцией по смыслу.
+export function instructionMatches(raw, data) {
+    return sameInstruction(parseInstructionJson(String(raw ?? '')), data);
+}
+
+// Стратегия "semantic": обходит все атрибуты data-iig-instruction в строке, разбирает
+// JSON каждого и переписывает те, что по смыслу равны инструкции, открытой в редакторе.
+// Ловит то, мимо чего проходят точные формы и anchored: инструкцию в тексте записали
+// не так, как её отдал DOM (модель поставила &quot;, лишние пробелы, свой порядок
+// ключей), а src у цели нет или он не тот — плашка упавшей или прерванной генерации
+// у SLAY 5 это div без src. Возвращает { result, hits }.
+function semanticReplace(str, wanted, textAfter) {
+    if (!wanted || !str.includes('data-iig-instruction')) return { result: str, hits: 0 };
+    const marker = /data-iig-instruction\s*=\s*/g;
+    let result = str;
+    let hits = 0;
+    let match;
+    while ((match = marker.exec(result)) !== null) {
+        const valueStart = match.index + match[0].length;
+        // Между «=» и «{» — только кавычка (или ничего, если атрибут без кавычек).
+        const jsonStart = result.indexOf('{', valueStart);
+        if (jsonStart === -1 || jsonStart - valueStart > 6) continue;
+        const jsonEnd = extractJsonSpan(result, jsonStart);
+        if (jsonEnd === -1) continue;
+        if (!sameInstruction(parseInstructionJson(result.slice(jsonStart, jsonEnd)), wanted)) {
+            marker.lastIndex = jsonEnd;
+            continue;
+        }
+        const cut = valueSplice(result, valueStart, jsonStart, jsonEnd, textAfter);
+        result = result.slice(0, cut.from) + cut.text + result.slice(cut.to);
+        hits++;
+        marker.lastIndex = cut.from + cut.text.length;
+    }
     return { result, hits };
 }
 
@@ -214,7 +295,7 @@ function encodeNonAscii(str) {
 //
 // Возвращает { rewrite, methods, wasMatched } — methods и признак совпадения
 // наполняются по ходу обхода.
-function buildRewriter({ rawDom, textAfter, src }) {
+function buildRewriter({ rawDom, textAfter, src, prevData }) {
     const methods = new Set();
     let matched = false;
     const forms = [
@@ -237,7 +318,7 @@ function buildRewriter({ rawDom, textAfter, src }) {
             matched = true;
             return replaceAll(str, needle, textAfter);
         }
-        // Последний рубеж: находим тег по src и вырезаем JSON брейс-каунтингом.
+        // Находим тег по src и вырезаем JSON брейс-каунтингом.
         if (src) {
             const { result, hits } = anchoredReplace(str, src, textAfter);
             if (hits > 0) {
@@ -245,6 +326,13 @@ function buildRewriter({ rawDom, textAfter, src }) {
                 matched = true;
                 return result;
             }
+        }
+        // Последний рубеж: сравнение разобранных инструкций по смыслу.
+        const { result, hits } = semanticReplace(str, prevData, textAfter);
+        if (hits > 0) {
+            methods.add('semantic');
+            matched = true;
+            return result;
         }
         return str;
     };
@@ -271,12 +359,48 @@ function updateDomCopies(rawDom, domAfter) {
     return count;
 }
 
-// persistInstruction({ targetEl, rawDom, newData, prevData }) -> Promise<{ ok, method, savedToDisk }>
-// prevData — инструкция в том виде, в каком её открыл редактор; нужна только истории
-// промпта (src/history.js), запись в текст сообщения от неё не зависит.
-export async function persistInstruction({ targetEl, rawDom, newData, prevData }) {
+// Где была цель, когда открывали редактор: номер сообщения и порядковый номер
+// картинки в нём. На телефоне окно редактора может висеть долго, и за это время хост
+// или SillyTavern успевают перерисовать сообщение — цель выпадает из документа, а с ней
+// пропадает и путь к сообщению через closest('.mes').
+export function captureTarget(targetEl) {
     const mesEl = targetEl?.closest?.('.mes');
     const mesid = mesEl ? Number.parseInt(mesEl.getAttribute('mesid'), 10) : NaN;
+    return {
+        mesid: Number.isInteger(mesid) ? mesid : null,
+        index: imageIndexOf(targetEl),
+    };
+}
+
+// Живая цель вместо отцепленной: та же по счёту картинка того же сообщения — но только
+// если её инструкция по смыслу та же, что была открыта в редакторе. Иначе (сообщение
+// поменялось целиком, картинки переставлены) возвращает null: писать в чужую картинку
+// хуже, чем честно не найти свою.
+export function resolveLiveTarget(targetEl, where, prevData) {
+    if (targetEl?.isConnected) return targetEl;
+    if (!where || where.mesid === null || where.index < 0) return null;
+    try {
+        const mesText = document.querySelector(`#chat .mes[mesid="${where.mesid}"] .mes_text`);
+        const candidate = mesText?.querySelectorAll('[data-iig-instruction]')[where.index] ?? null;
+        if (candidate && instructionMatches(candidate.getAttribute('data-iig-instruction'), prevData)) {
+            logInfo(`resolveLiveTarget: цель перерисована, найдена заново (сообщение ${where.mesid}, картинка ${where.index})`);
+            return candidate;
+        }
+    } catch (err) {
+        logWarn('resolveLiveTarget: поиск живой цели упал', err);
+    }
+    return null;
+}
+
+// persistInstruction({ targetEl, rawDom, newData, prevData, where }) -> Promise<{ ok, method, savedToDisk }>
+// prevData — инструкция в том виде, в каком её открыл редактор: по ней запись ищет
+// инструкцию в тексте по смыслу, и она же уходит в историю промпта.
+// where — captureTarget() на момент открытия редактора; нужен, только если цель к
+// моменту сохранения выпала из документа.
+export async function persistInstruction({ targetEl, rawDom, newData, prevData, where = null }) {
+    const mesEl = targetEl?.closest?.('.mes');
+    let mesid = mesEl ? Number.parseInt(mesEl.getAttribute('mesid'), 10) : NaN;
+    if (!Number.isInteger(mesid) && where?.mesid !== null && where?.mesid !== undefined) mesid = where.mesid;
 
     const ctx = getCtx();
     const message = Number.isInteger(mesid) ? ctx.chat?.[mesid] : null;
@@ -301,6 +425,7 @@ export async function persistInstruction({ targetEl, rawDom, newData, prevData }
             rawDom,
             textAfter,
             src: targetEl?.getAttribute?.('src'),
+            prevData,
         });
         textChanged = walkMessageStrings(message, rewrite);
         matched = wasMatched();
@@ -311,9 +436,11 @@ export async function persistInstruction({ targetEl, rawDom, newData, prevData }
     const domCount = updateDomCopies(rawDom, domAfter);
 
     if (!message || !matched) {
-        logWarn(
-            `persistInstruction: инструкция не найдена в тексте сообщения (dom-only, обновлено DOM-копий: ${domCount})`,
-        );
+        // Причина — чтобы по логу из консоли было видно, какой путь не сработал.
+        const why = !message
+            ? `не найдено сообщение (mesid=${Number.isInteger(mesid) ? mesid : '—'}, цель в документе: ${!!targetEl?.isConnected})`
+            : `инструкция не найдена в тексте сообщения ${mesid} ни строкой, ни по src, ни по смыслу`;
+        logWarn(`persistInstruction: ${why} — dom-only, обновлено DOM-копий: ${domCount}. Было в DOM: ${String(rawDom).slice(0, 200)}`);
         return { ok: false, method: 'dom-only', savedToDisk: false };
     }
 
@@ -323,7 +450,8 @@ export async function persistInstruction({ targetEl, rawDom, newData, prevData }
     // версию» было бы враньём. Упасть история не должна утянуть за собой сохранение
     // промпта: она удобство, а он — то, зачем пользователь нажал кнопку.
     try {
-        const index = imageIndexOf(targetEl);
+        const liveIndex = imageIndexOf(targetEl);
+        const index = liveIndex >= 0 ? liveIndex : (where?.index ?? -1);
         if (index < 0) {
             logWarn('persistInstruction: картинка не найдена в .mes_text — история промпта пропущена');
         } else {

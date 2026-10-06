@@ -33,7 +33,8 @@ global.SillyTavern = {
     }),
 };
 
-const { persistInstruction } = await import(`${SRC}persist.js`);
+const { persistInstruction, captureTarget, resolveLiveTarget } = await import(`${SRC}persist.js`);
+const { readInstruction } = await import(`${SRC}instruction.js`);
 
 const results = [];
 function check(name, actual, expected) {
@@ -201,6 +202,109 @@ const NEW_DATA = { prompt: 'new prompt', style: 'anime' };
 
     check('без правок (anchored): ok=true', res.ok, true);
     check('без правок (anchored): метод', res.method, 'anchored');
+}
+
+// ── 6б. anchored по атрибуту в двойных кавычках ─────────────────────────────────
+{
+    const img = setup({
+        message: { mes: `<img data-iig-instruction="{&quot;prompt&quot;: &quot;old&quot;}" src="${SRC_PATH}">` },
+        domHtml: `<img data-iig-instruction="{&quot;prompt&quot;: &quot;old&quot;}" src="${SRC_PATH}">`,
+    });
+    const res = await persistInstruction({ targetEl: img, rawDom: img.getAttribute('data-iig-instruction'), newData: NEW_DATA });
+    check('anchored в "…": метод', res.method, 'anchored');
+    const tpl = document.createElement('template');
+    tpl.innerHTML = chat[0].mes;
+    check('anchored в "…": атрибут читается как новый JSON',
+        tpl.content.querySelector('img').getAttribute('data-iig-instruction'), JSON.stringify(NEW_DATA));
+    check('anchored в "…": src цел', tpl.content.querySelector('img').getAttribute('src'), SRC_PATH);
+}
+
+// ── 7. Плашка упавшей генерации SLAY 5: div без src, текст в другой форме ───────
+// У div нет src — anchored не работает. Модель записала инструкцию через &quot; и с
+// пробелами, кириллица в тексте — числовыми энтити: точные формы тоже мимо. Найти
+// её можно только сравнив разобранный JSON по смыслу.
+{
+    const stored = '<p>Текст.</p><img data-iig-instruction="{&quot;style&quot;: &quot;anime&quot;, '
+        + '&quot;prompt&quot;: &quot;&#1082;&#1086;&#1090;&quot;}" src="[IMG:GEN]"> '
+        + `<img data-iig-instruction='{"prompt":"другая","style":"anime"}' src="${SRC_PATH}">`;
+    chat = [{ mes: stored, swipes: [stored] }];
+    document.getElementById('chat').innerHTML = `
+        <div class="mes" mesid="0"><div class="mes_text">
+            <div class="iig-error-placeholder" data-iig-instruction='{"prompt":"кот","style":"anime"}'>ошибка</div>
+            <img data-iig-instruction='{"prompt":"другая","style":"anime"}' src="${SRC_PATH}">
+        </div></div>`;
+    const target = document.querySelector('.iig-error-placeholder');
+    const opened = readInstruction(target);
+
+    const res = await persistInstruction({
+        targetEl: target,
+        rawDom: opened.rawDom,
+        newData: NEW_DATA,
+        prevData: opened.data,
+    });
+
+    check('semantic: ok=true', res.ok, true);
+    check('semantic: метод', res.method, 'semantic');
+    check('semantic: новый промпт в mes', chat[0].mes.includes('"prompt":"new prompt"'), true);
+    check('semantic: и в свайпе', chat[0].swipes[0].includes('"prompt":"new prompt"'), true);
+    check('semantic: старый вычищен', chat[0].mes.includes('&#1082;&#1086;&#1090;'), false);
+    check('semantic: соседняя картинка не тронута', chat[0].mes.includes('"prompt":"другая"'), true);
+    check('semantic: src маркер на месте', chat[0].mes.includes('src="[IMG:GEN]"'), true);
+    // Атрибут был в двойных кавычках — новый JSON с " внутри обязан встать в одинарные,
+    // иначе разметка сломается. Проверяем тем же разбором, что у браузера.
+    const tpl = document.createElement('template');
+    tpl.innerHTML = chat[0].mes;
+    const reparsed = tpl.content.querySelector('img[src="[IMG:GEN]"]')?.getAttribute('data-iig-instruction');
+    check('semantic: атрибут читается как новый JSON', reparsed, JSON.stringify(NEW_DATA));
+}
+
+// ── 8. Сообщение перерисовали, пока было открыто окно редактора ─────────────────
+// Цель выпала из документа: closest('.mes') больше ничего не находит. Живая картинка
+// на том же месте ищется по номеру сообщения и порядковому номеру картинки.
+{
+    const instr = '{"prompt":"old","style":"anime"}';
+    const html = `<img data-iig-instruction='${instr}' src="${SRC_PATH}">`;
+    const img = setup({ message: { mes: html }, domHtml: html });
+    const opened = readInstruction(img);
+    const where = captureTarget(img);
+    check('перерисовка: место запомнено', `${where.mesid}/${where.index}`, '0/0');
+
+    // Перерисовка: те же узлы заменяются новыми.
+    document.querySelector('.mes_text').innerHTML = html;
+    check('перерисовка: старая цель отцеплена', img.isConnected, false);
+
+    const live = resolveLiveTarget(img, where, opened.data);
+    check('перерисовка: найдена живая цель', live === document.querySelector('img[data-iig-instruction]'), true);
+
+    const res = await persistInstruction({ targetEl: live, rawDom: opened.rawDom, newData: NEW_DATA, prevData: opened.data, where });
+    check('перерисовка: ok=true', res.ok, true);
+    check('перерисовка: промпт в тексте', chat[0].mes.includes('new prompt'), true);
+}
+
+// ── 9. Живой цели нет, но сообщение известно: текст всё равно пишется ───────────
+{
+    const instr = '{"prompt":"old","style":"anime"}';
+    const html = `<img data-iig-instruction='${instr}' src="${SRC_PATH}">`;
+    const img = setup({ message: { mes: html }, domHtml: html });
+    const opened = readInstruction(img);
+    const where = captureTarget(img);
+    // Сообщение перерисовано с ДРУГОЙ картинкой на этом месте — подменять цель нельзя.
+    document.querySelector('.mes_text').innerHTML = `<img data-iig-instruction='{"prompt":"чужая"}' src="/x.png">`;
+
+    check('чужая на месте: живая цель не подменена', resolveLiveTarget(img, where, opened.data), null);
+
+    const res = await persistInstruction({ targetEl: img, rawDom: opened.rawDom, newData: NEW_DATA, prevData: opened.data, where });
+    check('отцеплена: ok=true по номеру сообщения', res.ok, true);
+    check('отцеплена: промпт в тексте', chat[0].mes.includes('new prompt'), true);
+}
+
+// ── 10. Без where отцепленная цель по-прежнему честно даёт dom-only ─────────────
+{
+    const html = `<img data-iig-instruction='{"prompt":"old"}' src="${SRC_PATH}">`;
+    const img = setup({ message: { mes: html }, domHtml: html });
+    img.remove();
+    const res = await persistInstruction({ targetEl: img, rawDom: img.getAttribute('data-iig-instruction'), newData: NEW_DATA });
+    check('отцеплена без where: dom-only', res.ok, false);
 }
 
 let failed = 0;
