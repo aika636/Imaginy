@@ -16,7 +16,7 @@ text, get a new version.
 
 ## In short
 
-- ✏️ **A pencil button next to the image** — opens a dialog with prompt, style and aspect ratio.
+- ✏️ **A pencil button next to the image** — opens a dialog with prompt, style, aspect ratio and quality (1K / 2K / 4K).
 - 🔁 **"Save and regenerate"** — a new image from the new text, no manual re-run.
 - 🧩 **A family of host extensions** — SLAY Images and its forks are detected automatically.
 - 💾 **The edit lives in the chat** — the prompt is written to every message storage location and
@@ -78,7 +78,7 @@ extension was detected as the active host.
 
 1. Hover a generated image in the chat — a **pencil** appears next to the host extension's own
    buttons.
-2. Clicking it opens the editor: **prompt**, **style** and **aspect ratio**.
+2. Clicking it opens the editor: **prompt**, **style**, **aspect ratio** and **quality** (1K / 2K / 4K resolution).
 3. Then either:
    - **Save** — the new prompt is stored in the message, the image stays as it is;
    - **Save and regenerate** — generation of a new image from the new text starts immediately
@@ -90,6 +90,8 @@ Small conveniences:
   button next to it;
 - if the style or aspect ratio is hard-set in the host extension's own settings, it overrides the
   per-image value — Imaginy warns about it right in the editor;
+- same for quality: the naistera path does not send a resolution, and some forks have a "settings
+  beat the tag" switch — in those cases a hint appears under the field;
 - there's a copy-prompt button;
 - **Esc** closes the dialog, **Ctrl+Enter** saves and regenerates.
 

@@ -98,7 +98,7 @@ function setEnv({ hostSettings = {}, lastStyle = '', language = 'ru' } = {}) {
 
 // Все интересные узлы открытой модалки. Селекторы — из src/editor.js: классы
 // .imaginy-modal-*, .imaginy-field, порядок полей задан массивом FIELDS
-// (prompt / style / aspect_ratio), кнопки различаем по подписи.
+// (prompt / style / aspect_ratio / image_size), кнопки различаем по подписи.
 function els() {
     const overlay = document.querySelector('.imaginy-modal-overlay');
     if (!overlay) return null;
@@ -111,6 +111,7 @@ function els() {
         prompt: fields[0]?.querySelector('textarea'),
         style: fields[1]?.querySelector('textarea'),
         aspect: fields[2]?.querySelector('select'),
+        size: fields[3]?.querySelector('select'),
         hints: (i) => [...fields[i].querySelectorAll('.imaginy-field-warning')],
         save: btn('Сохранить'),
         saveRegen: btn('Сохранить и перегенерировать'),
@@ -300,6 +301,29 @@ const BASE = { prompt: 'a cat', style: 'anime', aspect_ratio: '16:9' };
     check('buildResultData: нестандартное соотношение выбрано', e.aspect.value, '7:3');
     e.save.click();
     check('buildResultData: нестандартное соотношение сохранено', (await p).data.aspect_ratio, '7:3');
+}
+
+{
+    // Разрешение (качество) выбирается из 1K/2K/4K и записывается в image_size.
+    setEnv();
+    const p = openEditor({ data: { prompt: 'a cat' }, kind: 'image', regen: { ok: true } });
+    const e = els();
+    checkJson('buildResultData: варианты разрешения', [...e.size.options].map((o) => o.value),
+        ['', '1K', '2K', '4K']);
+    e.size.value = '4K';
+    e.save.click();
+    check('buildResultData: разрешение записано', (await p).data.image_size, '4K');
+}
+
+{
+    // «Не задано» убирает image_size из инструкции — хост возьмёт свою настройку.
+    setEnv();
+    const p = openEditor({ data: { prompt: 'a cat', image_size: '2K' }, kind: 'image', regen: { ok: true } });
+    const e = els();
+    check('buildResultData: разрешение из инструкции выбрано', e.size.value, '2K');
+    e.size.value = '';
+    e.save.click();
+    check('buildResultData: пустое разрешение удаляет ключ', Object.hasOwn((await p).data, 'image_size'), false);
 }
 
 {
@@ -509,6 +533,9 @@ const BASE = { prompt: 'a cat', style: 'anime', aspect_ratio: '16:9' };
     check('квирки: «Из промпта» выставил auto', extensionSettings.slay_image_gen.naisteraAspectRatio, 'auto');
     check('квирки: строка предупреждения о соотношении убрана', !!hintByText(2, 'перекроет любое выбранное здесь'), false);
 
+    // naistera разрешение не передаёт — об этом тоже предупреждаем.
+    check('квирки: предупреждение о разрешении на naistera', !!hintByText(3, 'не передаёт разрешение'), true);
+
     // Список соотношений на naistera-пути короче общего.
     checkJson('квирки: варианты naistera', [...els().aspect.options].map((o) => o.value),
         ['', '16:9', '9:16', '2:3', '3:2', '1:1']);
@@ -523,6 +550,27 @@ const BASE = { prompt: 'a cat', style: 'anime', aspect_ratio: '16:9' };
     check('квирки: у generic предупреждений нет',
         els().overlay.querySelectorAll('.imaginy-field-warning').length, 0);
     check('квирки: у generic полный список соотношений', els().aspect.options.length, 11);
+    els().cancel.click();
+    await p;
+}
+
+{
+    // Глобальные переключатели форков «настройки важнее тега» тоже глушат image_size.
+    setEnv({ hostSettings: { inline_image_gen: { apiType: 'gemini', promptDriven: false } } });
+    let p = openEditor({ data: { prompt: 'a cat' }, kind: 'image', regen: { ok: true } });
+    check('квирки: предупреждение о promptDriven', !!hintByText(3, 'Prompt-driven generation'), true);
+    els().cancel.click();
+    await p;
+
+    setEnv({ hostSettings: { inline_image_gen: { apiType: 'gemini', overrideImageSize: true } } });
+    p = openEditor({ data: { prompt: 'a cat' }, kind: 'image', regen: { ok: true } });
+    check('квирки: предупреждение об overrideImageSize', !!hintByText(3, 'перекрытие разрешения'), true);
+    els().cancel.click();
+    await p;
+
+    setEnv({ hostSettings: { inline_image_gen: { apiType: 'gemini', imageSize: '2K' } } });
+    p = openEditor({ data: { prompt: 'a cat' }, kind: 'image', regen: { ok: true } });
+    check('квирки: на gemini о разрешении не предупреждаем', els().hints(3).length, 0);
     els().cancel.click();
     await p;
 }

@@ -6,15 +6,19 @@
 
 import { toast } from './ctx.js';
 import { logError, logInfo, logWarn } from './log.js';
-import { getAspectRatioContext, setAspectRatioFromPrompt, getStyleContext, clearHostStyle } from './hostquirks.js';
+import {
+    getAspectRatioContext, setAspectRatioFromPrompt, getStyleContext, clearHostStyle, getImageSizeContext,
+} from './hostquirks.js';
 import { getHost } from './host.js';
 import { getSettings, saveSettings, refreshLastStyleField } from './settings.js';
 import { t } from './i18n.js';
 import { VERSION } from './version.js';
 
-// Поля image_size / quality / preset намеренно не редактируются: у активного
-// naistera-пути хост их вообще не отправляет (в теле запроса только
-// prompt/aspect_ratio/model), а у остальных путей это глобальные настройки хоста.
+// image_size (1K/2K/4K) редактируется: все хосты на Gemini-пути ставят per-image
+// значение выше своей настройки (src/hostquirks.js, getImageSizeContext).
+// Поля quality / preset намеренно не редактируются: у naistera-пути хост их вообще не
+// отправляет (в теле запроса только prompt/aspect_ratio/model), а у остальных путей
+// это глобальные настройки хоста.
 // Ключи, если они были в инструкции, сохраняются как есть — см. buildResultData.
 // Подписи полей — ключи локализации: сам массив вычисляется один раз при загрузке
 // модуля, а язык к тому моменту может быть ещё не выбран (настройки ST приходят позже).
@@ -23,6 +27,7 @@ const FIELDS = [
     { key: 'prompt', kind: 'textarea', rows: 8, autofocus: true },
     { key: 'style', kind: 'textarea', rows: 3 },
     { key: 'aspect_ratio', kind: 'select' },
+    { key: 'image_size', kind: 'select' },
 ];
 
 // Пороги раскладки заданы в строках текста, а не в пикселях. Пиксель на разных
@@ -320,6 +325,7 @@ function buildModal({ data, kind, regen, history }, resolve) {
     const host = getHost();
     const aspectCtx = getAspectRatioContext();
     const styleCtx = getStyleContext();
+    const sizeCtx = getImageSizeContext();
     // Настройки читаем один раз на открытие: нужен только запомненный стиль. Если
     // настройки почему-то недоступны, редактор обязан открыться и без них.
     let lastStyle = '';
@@ -387,9 +393,10 @@ function buildModal({ data, kind, regen, history }, resolve) {
         } else if (field.kind === 'select') {
             input = document.createElement('select');
             // Пустое значение = ключа в инструкции нет; хост тогда берёт свою настройку
-            // либо '1:1' (во всех четырёх хостах это одно и то же выражение
-            // options.aspectRatio || settings.aspectRatio || '1:1').
-            const choices = ['', ...aspectCtx.choices];
+            // либо значение по умолчанию (во всех хостах одно и то же выражение
+            // options.aspectRatio || settings.aspectRatio || '1:1', для размера — '1K').
+            const isSize = field.key === 'image_size';
+            const choices = ['', ...(isSize ? sizeCtx.choices : aspectCtx.choices)];
             // Значение из инструкции может быть нестандартным (руками правленый JSON) —
             // не теряем его молча, добавляем в список.
             if (existingValue && !choices.includes(existingValue)) choices.push(existingValue);
@@ -397,7 +404,7 @@ function buildModal({ data, kind, regen, history }, resolve) {
                 const opt = document.createElement('option');
                 opt.value = value;
                 opt.textContent = value === ''
-                    ? t('editor.aspect.unset', { host: t(host.name) })
+                    ? t(isSize ? 'editor.size.unset' : 'editor.aspect.unset', { host: t(host.name) })
                     : value;
                 input.appendChild(opt);
             }
@@ -512,6 +519,13 @@ function buildModal({ data, kind, regen, history }, resolve) {
                     },
                 },
             ));
+        }
+
+        // Разрешение из инструкции хост может не взять вовсе — путь naistera его не
+        // отправляет, а у части форков есть глобальный переключатель «настройки важнее
+        // тега». Кнопки здесь нет: переключатели у всех разные и живут в панели хоста.
+        if (field.key === 'image_size' && sizeCtx.ignored) {
+            wrap.appendChild(createHintRow(t(`editor.hostSizeIgnored.${sizeCtx.ignored}`, { host: t(host.name) })));
         }
 
         body.appendChild(wrap);

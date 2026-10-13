@@ -84,6 +84,39 @@ function check(name, actual, expected) {
     check('slay: стиль перекрыт', quirks.getStyleContext().overridden, true);
 }
 
+// ── SLAY: карандаш не налезает на соседние кнопки хоста ─────────────────────────
+{
+    // jsdom ничего не меряет — прямоугольники задаём руками. Обёртка с x=100,
+    // «перегенерировать» 108–142, «скачать» 150–184, обе в верхнем ряду.
+    extensionSettings = { slay_image_gen: {} };
+    const root = mes(`
+        <span class="iig-img-wrap"><img data-iig-instruction='${INSTR}' src="/a.png">
+        <button class="iig-regen-btn"></button><button class="iig-dl-btn"></button></span>`);
+    await freshModules();
+    decorate.decorateRoot(root);
+    const rect = (left, top, width, height) => () => ({
+        left, top, width, height, right: left + width, bottom: top + height,
+    });
+    const wrap = document.querySelector('.iig-img-wrap');
+    wrap.getBoundingClientRect = rect(100, 200, 400, 300);
+    wrap.querySelector('img').getBoundingClientRect = rect(100, 200, 400, 300);
+    wrap.querySelector('.iig-regen-btn').getBoundingClientRect = rect(108, 208, 34, 34);
+    const dl = wrap.querySelector('.iig-dl-btn');
+    dl.getBoundingClientRect = rect(150, 208, 34, 34);
+    const pencil = wrap.querySelector('.imaginy-edit-btn');
+
+    wrap.dispatchEvent(new dom.window.Event('pointerenter'));
+    check('slay: карандаш правее «скачать»', pencil.style.left, '92px');
+
+    dl.remove();
+    wrap.dispatchEvent(new dom.window.Event('pointerenter'));
+    check('slay: одна кнопка хоста — карандаш правее неё', pencil.style.left, '50px');
+
+    wrap.querySelector('.iig-regen-btn').remove();
+    wrap.dispatchEvent(new dom.window.Event('pointerenter'));
+    check('slay: кнопок не намерено — позиция из CSS', pencil.style.left, '');
+}
+
 // ── delidgi/sillyimages ─────────────────────────────────────────────────────────
 {
     extensionSettings = { inline_image_gen: { imgActionRegen: true, avatarItems: [], styles: [{ id: 's1', name: 'Ink', value: 'ink' }], activeStyleId: 's1', aspectRatio: '3:2' } };

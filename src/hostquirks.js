@@ -66,6 +66,29 @@ export function getAspectRatioContext() {
     };
 }
 
+// Разрешение картинки (image_size). Во всех пяти хостах per-image значение в приоритете:
+// options.imageSize || settings.imageSize || '1K' (SLAY 4252, delidgi 4941,
+// notsosilly 1783, 0xl0cal/sillywardrobe — providers). Значения одни и те же: 1K/2K/4K.
+// Не доходит оно в трёх случаях, и о каждом редактор честно предупреждает:
+//   naistera — этот путь кладёт в тело запроса только prompt/aspect_ratio/model;
+//   notsosilly с выключенным promptDriven — хост вычищает per-tag image_size;
+//   sillywardrobe с overrideImageSize — хост обнуляет per-tag image_size.
+export const IMAGE_SIZES = Object.freeze(['1K', '2K', '4K']);
+
+export function getImageSizeContext() {
+    const s = hostSettings();
+    let ignored = null;
+    if (s?.apiType === 'naistera') ignored = 'naistera';
+    else if (s?.promptDriven === false) ignored = 'promptDriven';
+    else if (s?.overrideImageSize === true) ignored = 'override';
+    return {
+        available: Boolean(s),
+        choices: [...IMAGE_SIZES],
+        global: s ? String(s.imageSize ?? '') : '',
+        ignored,
+    };
+}
+
 // Активный пресет стиля у форков sillyimages: settings.styles[] + settings.activeStyleId.
 function activePreset(settings) {
     const styles = Array.isArray(settings?.styles) ? settings.styles : [];

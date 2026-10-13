@@ -100,6 +100,52 @@ function makeButton(kind, { errorMod = false } = {}) {
     return btn;
 }
 
+// Отступ карандаша от последней кнопки хоста и высота «верхнего ряда», в котором эти
+// кнопки ищутся. 8px — тот же зазор, что у SLAY между краем и его кнопкой.
+const BESIDE_GAP_PX = 8;
+const TOP_ROW_PX = 48;
+const MAX_HOST_BTN_PX = 80;
+
+// Для btnPlacement 'beside-host': style.css ставит карандаш на left:50px — правее одной
+// кнопки перегенерации SLAY. SLAY 5.x добавил рядом вторую («скачать»), и карандаш
+// уехал под неё. Считать кнопки хоста поимённо значит снова сломаться на следующей
+// обнове, поэтому меряем: берём все кнопки хоста в верхнем ряду левой половины обёртки
+// и ставим карандаш правее самой правой. Не нашлось (кнопки не отрисованы, jsdom) —
+// остаётся значение из CSS.
+function fitBesideHostButtons(container) {
+    try {
+        const btn = container.querySelector(`:scope > .${BTN_CLASS}`);
+        if (!btn || btn.classList.contains(BTN_CLASS_ERROR)) return;
+        const box = container.getBoundingClientRect();
+        if (!box.width) return;
+        let right = 0;
+        for (const other of container.querySelectorAll('button, a, [role="button"]')) {
+            if (other === btn || other.closest(`.${BTN_CLASS}`)) continue;
+            const r = other.getBoundingClientRect();
+            if (!r.width || !r.height) continue;
+            // Ссылка вокруг всей картинки — не кнопка; кнопки хостов не крупнее ~50px.
+            if (r.width > MAX_HOST_BTN_PX || r.height > MAX_HOST_BTN_PX) continue;
+            if (r.top - box.top > TOP_ROW_PX) continue;
+            if (r.left - box.left > box.width / 2) continue;
+            right = Math.max(right, r.right - box.left);
+        }
+        btn.style.left = right > 0 ? `${Math.round(right + BESIDE_GAP_PX)}px` : '';
+    } catch (err) {
+        logWarn('fitBesideHostButtons упал', err);
+    }
+}
+
+// Кнопки хоста могут появиться позже карандаша и показываются по наведению, поэтому
+// меряем не один раз, а перед каждым показом: наведение мышью и касание.
+function watchHostButtons(container) {
+    if (getHost().btnPlacement !== 'beside-host' || container.dataset.imaginyFit === '1') return;
+    container.dataset.imaginyFit = '1';
+    const fit = () => fitBesideHostButtons(container);
+    container.addEventListener('pointerenter', fit);
+    container.addEventListener('touchstart', fit, { passive: true });
+    (window.requestAnimationFrame ?? setTimeout)(fit);
+}
+
 // Обёртка уже содержит нашу кнопку? Значит либо мы её уже поставили, либо ST
 // клонировал DOM-узел вместе с dataset-флагом и кнопкой сразу (защита от дублей).
 function containerAlreadyHasButton(container) {
@@ -203,6 +249,7 @@ function decorateTarget(el, kind) {
     btn.__imaginyTarget = el;
     container.appendChild(btn);
     el.dataset.imaginyBound = '1';
+    if (!isError) watchHostButtons(container);
 
     // Плашка-div (SLAY) сама себе контейнер, и position ей может быть не задан.
     if (isError && container === el) {

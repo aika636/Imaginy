@@ -87,7 +87,8 @@ function setLanguage(code) {
     for (const m of html.matchAll(/data-i18n="([\w.]+)"/g)) used.add(m[1]);
 
     // Собираются в коде из частей — глазами в исходнике их не видно.
-    for (const key of ['prompt', 'style', 'aspect_ratio']) used.add(`editor.field.${key}`);
+    for (const key of ['prompt', 'style', 'aspect_ratio', 'image_size']) used.add(`editor.field.${key}`);
+    for (const why of ['naistera', 'promptDriven', 'override']) used.add(`editor.hostSizeIgnored.${why}`);
 
     const ru = new Set(tableKeys('ru'));
     const unknown = [...used].filter((k) => !ru.has(k));

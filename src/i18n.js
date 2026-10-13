@@ -36,6 +36,7 @@ const STRINGS = {
         'editor.field.prompt': 'Промпт',
         'editor.field.style': 'Стиль',
         'editor.field.aspect_ratio': 'Соотношение сторон',
+        'editor.field.image_size': 'Качество (разрешение)',
         'editor.copyPrompt': 'Скопировать промпт',
         'editor.save': 'Сохранить',
         'editor.saveRegen': 'Сохранить и перегенерировать',
@@ -43,6 +44,13 @@ const STRINGS = {
         'editor.cancel': 'Отмена',
         'editor.hotkeyHint': '{hotkey} — сохранить, Esc — отмена',
         'editor.aspect.unset': 'Не задано (значение возьмёт {host})',
+        'editor.size.unset': 'Не задано (значение возьмёт {host})',
+        'editor.hostSizeIgnored.naistera':
+            'Путь naistera в {host} не передаёт разрешение — выбор здесь на картинку не повлияет.',
+        'editor.hostSizeIgnored.promptDriven':
+            'В {host} выключен «Prompt-driven generation» — разрешение возьмётся из настроек хоста.',
+        'editor.hostSizeIgnored.override':
+            'В {host} включено перекрытие разрешения — значение из настроек хоста перебьёт выбранное здесь.',
         'editor.styleFromMemory': 'Подставлен последний использованный стиль.',
         'editor.forget': 'Забыть',
         'editor.hostStyleOverride':
@@ -157,6 +165,7 @@ const STRINGS = {
         'editor.field.prompt': 'Prompt',
         'editor.field.style': 'Style',
         'editor.field.aspect_ratio': 'Aspect ratio',
+        'editor.field.image_size': 'Quality (resolution)',
         'editor.copyPrompt': 'Copy prompt',
         'editor.save': 'Save',
         'editor.saveRegen': 'Save and regenerate',
@@ -164,6 +173,13 @@ const STRINGS = {
         'editor.cancel': 'Cancel',
         'editor.hotkeyHint': '{hotkey} — save, Esc — cancel',
         'editor.aspect.unset': 'Not set ({host} decides)',
+        'editor.size.unset': 'Not set ({host} decides)',
+        'editor.hostSizeIgnored.naistera':
+            'The naistera path in {host} does not send a resolution — this choice will not affect the image.',
+        'editor.hostSizeIgnored.promptDriven':
+            '“Prompt-driven generation” is off in {host} — the resolution comes from its settings.',
+        'editor.hostSizeIgnored.override':
+            'Resolution override is on in {host} — its own setting beats the value chosen here.',
         'editor.styleFromMemory': 'Filled in with the last style you used.',
         'editor.forget': 'Forget',
         'editor.hostStyleOverride':
