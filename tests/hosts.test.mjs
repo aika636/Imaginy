@@ -104,16 +104,26 @@ function check(name, actual, expected) {
     const dl = wrap.querySelector('.iig-dl-btn');
     dl.getBoundingClientRect = rect(150, 208, 34, 34);
     const pencil = wrap.querySelector('.imaginy-edit-btn');
+    // В jsdom нет PointerEvent — тип указателя дописываем на обычное событие.
+    const hover = (pointerType) => {
+        const e = new dom.window.Event('pointerenter');
+        e.pointerType = pointerType;
+        wrap.dispatchEvent(e);
+    };
 
-    wrap.dispatchEvent(new dom.window.Event('pointerenter'));
+    hover('mouse');
     check('slay: карандаш правее «скачать»', pencil.style.left, '92px');
 
+    // Касание карандаш не двигает: сдвиг посреди тапа съедал нажатие на кнопку хоста.
     dl.remove();
-    wrap.dispatchEvent(new dom.window.Event('pointerenter'));
+    hover('touch');
+    check('slay: касание не пересчитывает позицию', pencil.style.left, '92px');
+
+    hover('mouse');
     check('slay: одна кнопка хоста — карандаш правее неё', pencil.style.left, '50px');
 
     wrap.querySelector('.iig-regen-btn').remove();
-    wrap.dispatchEvent(new dom.window.Event('pointerenter'));
+    hover('mouse');
     check('slay: кнопок не намерено — позиция из CSS', pencil.style.left, '');
 }
 

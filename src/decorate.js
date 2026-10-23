@@ -135,14 +135,26 @@ function fitBesideHostButtons(container) {
     }
 }
 
-// Кнопки хоста могут появиться позже карандаша и показываются по наведению, поэтому
-// меряем не один раз, а перед каждым показом: наведение мышью и касание.
-function watchHostButtons(container) {
+// Кнопки хоста могут появиться позже карандаша, а у свежей картинки обёртка до
+// загрузки имеет нулевой размер. Поэтому меряем заранее: сразу, после загрузки
+// картинки и при каждом изменении размера обёртки. Во время касания ничего не
+// трогаем: сдвиг карандаша посреди тапа на телефоне съедал нажатие на кнопку хоста.
+// Наведение мышью остаётся — на десктопе оно безвредно и ловит поздние кнопки.
+function watchHostButtons(container, target) {
     if (getHost().btnPlacement !== 'beside-host' || container.dataset.imaginyFit === '1') return;
     container.dataset.imaginyFit = '1';
     const fit = () => fitBesideHostButtons(container);
-    container.addEventListener('pointerenter', fit);
-    container.addEventListener('touchstart', fit, { passive: true });
+    container.addEventListener('pointerenter', (e) => {
+        if (e.pointerType === 'mouse') fit();
+    });
+    if (target?.tagName === 'IMG' && !target.complete) {
+        target.addEventListener('load', fit, { once: true });
+    }
+    try {
+        if (typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(container);
+    } catch (err) {
+        logWarn('watchHostButtons: ResizeObserver недоступен', err);
+    }
     (window.requestAnimationFrame ?? setTimeout)(fit);
 }
 
@@ -249,7 +261,7 @@ function decorateTarget(el, kind) {
     btn.__imaginyTarget = el;
     container.appendChild(btn);
     el.dataset.imaginyBound = '1';
-    if (!isError) watchHostButtons(container);
+    if (!isError) watchHostButtons(container, el);
 
     // Плашка-div (SLAY) сама себе контейнер, и position ей может быть не задан.
     if (isError && container === el) {

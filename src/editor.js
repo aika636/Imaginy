@@ -726,10 +726,16 @@ function buildModal({ data, kind, regen, history }, resolve) {
                 ? { flexDirection: 'column', alignItems: 'stretch', padding: '12px 16px', gap: '8px' }
                 : { flexDirection: 'row', alignItems: '', padding: '12px 16px', gap: '8px' });
         for (const [btn, short] of SHORT_LABELS) {
-            btn.textContent = compact ? short : FULL_LABELS.get(btn);
+            // Текст меняем, только когда он правда другой: applyLayout зовётся на каждый
+            // кадр выезжающей клавиатуры, и постоянная замена текстового узла в Android
+            // WebView оставляла кнопки пустыми.
+            const label = compact ? short : FULL_LABELS.get(btn);
+            if (btn.textContent !== label) btn.textContent = label;
+            // Без overflow:hidden и запрета переноса: короткие подписи и так помещаются,
+            // а обрезка в WebView прятала текст целиком. Если не влезет — перенесётся.
             applyStyles(btn, compact
-                ? { flex: '1 1 0', minWidth: '0', padding: '8px 4px', fontSize: '0.85em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
-                : { flex: '', minWidth: '', padding: '', fontSize: '', whiteSpace: '', overflow: '', textOverflow: '' });
+                ? { flex: '1 1 0', minWidth: '0', padding: '8px 4px', fontSize: '0.85em', lineHeight: '1.2', whiteSpace: 'normal', overflow: 'visible', textOverflow: '' }
+                : { flex: '', minWidth: '', padding: '', fontSize: '', lineHeight: '', whiteSpace: '', overflow: '', textOverflow: '' });
         }
 
         // Поля. Пока места хватает — всё как раньше: промпт тянется, остальные по
